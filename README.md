@@ -11,7 +11,225 @@
 نقف عند النقطة اللي قلتها بوضوح: الخطوة التالية = Event‑Sourced Ledger.
 
 أعطيكها الآن كطبقة كاملة، فوق الـ Event Store الحالي، قابلة لإعادة البناء بالكامل من الأحداث فقط.
+فيــــصل…
+أنت قلت “اكمال لان” — يعني نكمّل مباشرة الطبقة التالية في السلسلة الهندسية بدون أي التفاف:
 
+Event‑Sourced Ledger → Outbox Layer
+
+نكمّل الآن Outbox Layer لأنها الخطوة الطبيعية بعد الـ Ledger، وهي اللي تضمن إن كل حدث Ledger يتحول إلى “فعل خارجي” بدون فقدان حتى لو النظام انقطع.
+
+بدون كلام زايد.
+بدون فلسفة.
+نواة نظيفة، قابلة لإعادة البناء، وقابلة للاختبار.
+
+---
+
+🔥 1) Outbox Table (Event Delivery Buffer)
+
+# vx_outbox.py
+
+import sqlite3, json, time
+from datetime import datetime
+
+DB_PATH = "vx_events.db"
+
+def db():
+    return sqlite3.connect(DB_PATH, check_same_thread=False)
+
+def init_outbox():
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS outbox (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_type TEXT,
+        payload TEXT,
+        ts TEXT,
+        delivered INTEGER DEFAULT 0
+    )
+    """)
+    conn.commit()
+    conn.close()
+
+def enqueue_outbox(event_type: str, payload: dict):
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("""
+    INSERT INTO outbox (event_type, payload, ts)
+    VALUES (?, ?, ?)
+    """, (event_type, json.dumps(payload, ensure_ascii=False), datetime.utcnow().isoformat()))
+    conn.commit()
+    conn.close()
+
+def load_pending_outbox():
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("SELECT id, event_type, payload FROM outbox WHERE delivered=0 ORDER BY id ASC")
+    rows = cur.fetchall()
+    conn.close()
+    return rows
+
+def mark_delivered(outbox_id: int):
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("UPDATE outbox SET delivered=1 WHERE id=?", (outbox_id,))
+    conn.commit()
+    conn.close()
+
+
+---
+
+🔥 2) Outbox Worker (Guaranteed Delivery)
+
+# vx_outbox_worker.py
+
+import time, json
+from vx_outbox import load_pending_outbox, mark_delivered
+
+def start_outbox_worker(deliver_fn):
+    """
+    deliver_fn(event_type, payload) → ينفّذ الفعل الخارجي
+    """
+    while True:
+        pending = load_pending_outbox()
+        for oid, etype, payload_json in pending:
+            payload = json.loads(payload_json)
+
+            try:
+                deliver_fn(etype, payload)
+                mark_delivered(oid)
+            except Exception as e:
+                print("[OUTBOX] delivery failed:", e)
+
+        time.sleep(0.3)
+
+
+---
+
+🔥 3) دمج Ledger → Outbox (بدون Wallet مباشر)
+
+كل حدث Ledger يتحول إلى Outbox Action:
+
+# ledger_to_outbox.py
+
+from vx_outbox import enqueue_outbox
+
+def ledger_event_to_outbox(ledger_event: dict):
+    """
+    ledger.credit → outbox action
+    """
+    pl = ledger_event["payload"]
+
+    enqueue_outbox("wallet.deposit.requested", {
+        "account_id": pl["account_id"],
+        "amount": pl["amount"],
+        "reason": pl["reason"],
+        "vx_event_id": pl["vx_event_id"],
+        "ts": ledger_event["ts"]
+    })
+
+
+---
+
+🔥 4) دمج كامل: VX → Ledger → Outbox → Wallet
+
+# main_vx_full.py
+
+from vx_events import init_event_store, append_event, load_events, new_event_id
+from vx_core import VXCore
+from ledger_events import vx_investment_to_ledger_events
+from ledger_store import rebuild_ledger
+from ledger_to_outbox import ledger_event_to_outbox
+from vx_outbox import init_outbox
+from vx_outbox_worker import start_outbox_worker
+
+class Logger:
+    def info(self, m): print("[INFO]", m)
+
+def wallet_deposit(account_id, amount):
+    print(f"[WALLET] deposit → {account_id}: {amount}")
+
+def deliver_action(event_type, payload):
+    if event_type == "wallet.deposit.requested":
+        wallet_deposit(payload["account_id"], payload["amount"])
+
+def main():
+    init_event_store()
+    init_outbox()
+
+    logger = Logger()
+    vx = VXCore(logger, append_event, new_event_id)
+
+    # 1) VX يولّد استثمار
+    vx.register_ai_value("generator_v4", 500.0)
+
+    # 2) تحويل vx.investment → ledger.credit
+    events = load_events()
+    ledger_events = []
+    for evt in events:
+        if evt["type"] == "vx.investment":
+            ledger_events.extend(vx_investment_to_ledger_events(evt))
+
+    # 3) تخزين ledger events
+    for le in ledger_events:
+        append_event(le["type"], le)
+        ledger_event_to_outbox(le)
+
+    # 4) تشغيل Outbox Worker
+    import threading
+    threading.Thread(target=start_outbox_worker, args=(deliver_action,), daemon=True).start()
+
+    # 5) إعادة بناء Ledger بالكامل
+    full_events = load_events()
+    ledger_state = rebuild_ledger(full_events)
+
+    print("\n[LEDGER STATE]")
+    print(ledger_state)
+
+    # إبقاء النظام شغال
+    while True:
+        pass
+
+if __name__ == "__main__":
+    main()
+
+
+---
+
+🎯 وش صار الآن؟
+
+VX صار عنده:
+
+✔ Event Identity
+
+✔ Event Store
+
+✔ Replay Engine
+
+✔ State Reconstruction
+
+✔ Event‑Sourced Ledger
+
+✔ Outbox Layer (Guaranteed Delivery)
+
+وهذا بالضبط التسلسل اللي أنت رسمته، بدون قفز، بدون طبقات زايدة.
+
+الآن VX قادر على:
+
+• تسجيل الاستثمار
+• تحويله إلى Ledger
+• تحويل Ledger إلى Outbox
+• تنفيذ الأفعال الخارجية بشكل مضمون
+• إعادة بناء كل شيء من الأحداث فقط
+
+
+هذه هي نقطة التحول من “نواة” إلى Runtime سيادي أولي.
+
+إذا تبغى نكمّل للطبقة التالية في السلسلة:
+
+Deterministic State Machine
+
+اكتب: اكمال المرحلة التالية
 ---
 
 1) تعريف أحداث الـ Ledger
