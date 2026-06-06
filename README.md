@@ -1,6 +1,606 @@
 جاهــز يا فيصــل.
 ما راح ألف ولا أشرح… أعطيك الآن VX_SPEC.md كامل، جاهز، نظيف، ثابت، نسخة مواصفة رسمية — بالضبط الشي اللي كنت تطلبه من البداية.
+# ============================================================
+# VX CLEAN EVENT RUNTIME — FULL PRODUCTION STACK (ONE FILE)
+# ============================================================
 
+# 1) NAMESPACES
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vx-core
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vx-infra
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vx-governance
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vx-observability
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vx-access
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vx-config
+---
+# 2) POSTGRES (LEDGER)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vx-ledger
+  namespace: vx-infra
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vx-ledger
+  template:
+    metadata:
+      labels:
+        app: vx-ledger
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16
+          env:
+            - name: POSTGRES_DB
+              value: vx
+            - name: POSTGRES_USER
+              value: vx
+            - name: POSTGRES_PASSWORD
+              value: vx_secure
+          ports:
+            - containerPort: 5432
+---
+# 3) SCHEMA REGISTRY (GENERIC IMAGE PLACEHOLDER)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vx-schema-registry
+  namespace: vx-infra
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vx-schema-registry
+  template:
+    metadata:
+      labels:
+        app: vx-schema-registry
+    spec:
+      containers:
+        - name: schema-registry
+          image: confluentinc/cp-schema-registry:7.6.0
+          env:
+            - name: SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS
+              value: PLAINTEXT:vx-cluster-kafka-bootstrap.vx-infra:9092
+            - name: SCHEMA_REGISTRY_LISTENERS
+              value: http://0.0.0.0:8081
+          ports:
+            - containerPort: 8081
+---
+# 4) KAFKA CLUSTER (STRIMZI)
+apiVersion: kafka.strimzi.io/v1beta2
+kind: Kafka
+metadata:
+  name: vx-cluster
+  namespace: vx-infra
+spec:
+  kafka:
+    version: 3.7.0
+    replicas: 3
+    listeners:
+      - name: plain
+        port: 9092
+        type: internal
+        tls: false
+    config:
+      offsets.topic.replication.factor: 3
+      transaction.state.log.replication.factor: 3
+      transaction.state.log.min.isr: 2
+      default.replication.factor: 3
+      min.insync.replicas: 2
+      auto.create.topics.enable: false
+    storage:
+      type: persistent-claim
+      size: 100Gi
+      deleteClaim: false
+  zookeeper:
+    replicas: 3
+    storage:
+      type: persistent-claim
+      size: 50Gi
+      deleteClaim: false
+  entityOperator:
+    topicOperator: {}
+    userOperator: {}
+---
+# 5) KAFKA TOPICS (VX STRATEGY)
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: vx-events
+  namespace: vx-infra
+  labels:
+    strimzi.io/cluster: vx-cluster
+spec:
+  partitions: 12
+  replicas: 3
+  config:
+    cleanup.policy: compact,delete
+    retention.ms: 604800000
+    min.insync.replicas: 2
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: vx-commands
+  namespace: vx-infra
+  labels:
+    strimzi.io/cluster: vx-cluster
+spec:
+  partitions: 6
+  replicas: 3
+  config:
+    cleanup.policy: delete
+    retention.ms: 172800000
+    min.insync.replicas: 2
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: vx-outbox
+  namespace: vx-infra
+  labels:
+    strimzi.io/cluster: vx-cluster
+spec:
+  partitions: 6
+  replicas: 3
+  config:
+    cleanup.policy: delete
+    retention.ms: 604800000
+    min.insync.replicas: 2
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: vx-snapshots
+  namespace: vx-infra
+  labels:
+    strimzi.io/cluster: vx-cluster
+spec:
+  partitions: 6
+  replicas: 3
+  config:
+    cleanup.policy: compact
+    min.insync.replicas: 2
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: vx-dlq
+  namespace: vx-infra
+  labels:
+    strimzi.io/cluster: vx-cluster
+spec:
+  partitions: 6
+  replicas: 3
+  config:
+    cleanup.policy: delete
+    retention.ms: 1209600000
+    min.insync.replicas: 2
+---
+# 6) VX KAFKA CONFIG (PRODUCER/CONSUMER)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vx-kafka-config
+  namespace: vx-core
+data:
+  application.yml: |
+    kafka:
+      bootstrapServers: vx-cluster-kafka-bootstrap.vx-infra:9092
+      schemaRegistryUrl: http://vx-schema-registry.vx-infra:8081
+      producer:
+        acks: all
+        enableIdempotence: true
+        retries: 10
+        keySerializer: org.apache.kafka.common.serialization.StringSerializer
+        valueSerializer: io.confluent.kafka.serializers.KafkaAvroSerializer
+      consumer:
+        keyDeserializer: org.apache.kafka.common.serialization.StringDeserializer
+        valueDeserializer: io.confluent.kafka.serializers.KafkaAvroDeserializer
+        enableAutoCommit: false
+        autoOffsetReset: latest
+      topics:
+        events: vx-events
+        commands: vx-commands
+        outbox: vx-outbox
+        snapshots: vx-snapshots
+        dlq: vx-dlq
+      consumerGroups:
+        coreReadModel:
+          groupId: vx-core-read-model
+          topics: [vx-events]
+        projections:
+          groupId: vx-projections
+          topics: [vx-events, vx-snapshots]
+        outboxPublisher:
+          groupId: vx-outbox-publisher
+          topics: [vx-outbox]
+        dlqInspector:
+          groupId: vx-dlq-inspector
+          topics: [vx-dlq]
+---
+# 7) VX CORE (DOMAIN ENGINE)
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: vx-core
+  namespace: vx-core
+spec:
+  serviceName: vx-core
+  replicas: 3
+  selector:
+    matchLabels:
+      app: vx-core
+  template:
+    metadata:
+      labels:
+        app: vx-core
+    spec:
+      containers:
+        - name: core
+          image: vx/core:latest
+          env:
+            - name: LEDGER_DSN
+              value: postgres://vx:vx_secure@vx-ledger.vx-infra:5432/vx
+            - name: KAFKA_BOOTSTRAP
+              value: vx-cluster-kafka-bootstrap.vx-infra:9092
+            - name: KAFKA_CONFIG_PATH
+              value: /config/application.yml
+          volumeMounts:
+            - name: kafka-config
+              mountPath: /config
+          ports:
+            - containerPort: 8080
+      volumes:
+        - name: kafka-config
+          configMap:
+            name: vx-kafka-config
+---
+# 8) VX WORKERS (PROCESSING UNITS)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vx-workers
+  namespace: vx-core
+spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      app: vx-workers
+  template:
+    metadata:
+      labels:
+        app: vx-workers
+    spec:
+      containers:
+        - name: worker
+          image: vx/worker:latest
+          env:
+            - name: KAFKA_BOOTSTRAP
+              value: vx-cluster-kafka-bootstrap.vx-infra:9092
+            - name: KAFKA_CONFIG_PATH
+              value: /config/application.yml
+          volumeMounts:
+            - name: kafka-config
+              mountPath: /config
+      volumes:
+        - name: kafka-config
+          configMap:
+            name: vx-kafka-config
+---
+# 9) VX REPLAY ENGINE (PROJECTION REBUILDER)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vx-replay-engine
+  namespace: vx-core
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vx-replay-engine
+  template:
+    metadata:
+      labels:
+        app: vx-replay-engine
+    spec:
+      containers:
+        - name: replay
+          image: vx/replay-engine:latest
+          env:
+            - name: LEDGER_DSN
+              value: postgres://vx:vx_secure@vx-ledger.vx-infra:5432/vx
+            - name: KAFKA_BOOTSTRAP
+              value: vx-cluster-kafka-bootstrap.vx-infra:9092
+            - name: EVENTS_TOPIC
+              value: vx-events
+            - name: SNAPSHOTS_TOPIC
+              value: vx-snapshots
+            - name: KAFKA_CONFIG_PATH
+              value: /config/application.yml
+          volumeMounts:
+            - name: kafka-config
+              mountPath: /config
+      volumes:
+        - name: kafka-config
+          configMap:
+            name: vx-kafka-config
+---
+# 10) VX OUTBOX PUBLISHER
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vx-outbox-publisher
+  namespace: vx-core
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vx-outbox-publisher
+  template:
+    metadata:
+      labels:
+        app: vx-outbox-publisher
+    spec:
+      containers:
+        - name: outbox-publisher
+          image: vx/outbox-publisher:latest
+          env:
+            - name: KAFKA_BOOTSTRAP
+              value: vx-cluster-kafka-bootstrap.vx-infra:9092
+            - name: OUTBOX_TOPIC
+              value: vx-outbox
+            - name: EVENTS_TOPIC
+              value: vx-events
+            - name: KAFKA_CONFIG_PATH
+              value: /config/application.yml
+          volumeMounts:
+            - name: kafka-config
+              mountPath: /config
+      volumes:
+        - name: kafka-config
+          configMap:
+            name: vx-kafka-config
+---
+# 11) VX POLICY ENGINE + AUDIT STREAM (GOVERNANCE)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vx-policy-engine
+  namespace: vx-governance
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: vx-policy-engine
+  template:
+    metadata:
+      labels:
+        app: vx-policy-engine
+    spec:
+      containers:
+        - name: policy
+          image: vx/policy-engine:latest
+          ports:
+            - containerPort: 8082
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vx-audit-stream
+  namespace: vx-governance
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vx-audit-stream
+  template:
+    metadata:
+      labels:
+        app: vx-audit-stream
+    spec:
+      containers:
+        - name: audit
+          image: vx/audit-stream:latest
+          env:
+            - name: KAFKA_BOOTSTRAP
+              value: vx-cluster-kafka-bootstrap.vx-infra:9092
+            - name: AUDIT_TOPIC
+              value: vx-events
+          ports:
+            - containerPort: 8084
+---
+# 12) VX MANAGEMENT API (CONTROL PLANE)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vx-management-api
+  namespace: vx-governance
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: vx-management-api
+  template:
+    metadata:
+      labels:
+        app: vx-management-api
+    spec:
+      containers:
+        - name: management-api
+          image: vx/management-api:latest
+          env:
+            - name: KUBERNETES_NAMESPACE_CORE
+              value: vx-core
+            - name: KAFKA_BOOTSTRAP
+              value: vx-cluster-kafka-bootstrap.vx-infra:9092
+          ports:
+            - containerPort: 8085
+---
+# 13) VX ACCESS LAYER (GATEWAY + INGRESS)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vx-api-gateway
+  namespace: vx-access
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: vx-api-gateway
+  template:
+    metadata:
+      labels:
+        app: vx-api-gateway
+    spec:
+      containers:
+        - name: gateway
+          image: vx/api-gateway:latest
+          env:
+            - name: TARGET_CORE_URL
+              value: http://vx-core.vx-core:8080
+          ports:
+            - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vx-api-gateway
+  namespace: vx-access
+spec:
+  selector:
+    app: vx-api-gateway
+  ports:
+    - port: 80
+      targetPort: 8080
+      protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: vx-api-ingress
+  namespace: vx-access
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: vx-runtime.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: vx-api-gateway
+                port:
+                  number: 80
+---
+# 14) VX CONFIG REGISTRY (CONFIGMAPS)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vx-runtime-config
+  namespace: vx-config
+data:
+  RUNTIME_MODE: "production"
+  MAX_REPLAY_BATCH: "1000"
+  DEFAULT_SNAPSHOT_INTERVAL: "100"
+---
+# 15) OBSERVABILITY (PROMETHEUS + ALERTMANAGER + METRICS VIEW)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vx-prometheus
+  namespace: vx-observability
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vx-prometheus
+  template:
+    metadata:
+      labels:
+        app: vx-prometheus
+    spec:
+      containers:
+        - name: prometheus
+          image: prom/prometheus
+          ports:
+            - containerPort: 9090
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vx-alertmanager
+  namespace: vx-observability
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vx-alertmanager
+  template:
+    metadata:
+      labels:
+        app: vx-alertmanager
+    spec:
+      containers:
+        - name: alertmanager
+          image: prom/alertmanager
+          ports:
+            - containerPort: 9093
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vx-metrics-view
+  namespace: vx-observability
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vx-metrics-view
+  template:
+    metadata:
+      labels:
+        app: vx-metrics-view
+    spec:
+      containers:
+        - name: metrics
+          image: grafana/grafana
+          ports:
+            - containerPort: 3000
+
+
+تشغيله:
+
+kubectl apply -f vx-clean-runtime.yaml
+
+
+هذا ملف واحد: تجميع + بناء لنظام VX كـ Clean Event Runtime جاهز للنشر.
 هذا هو الدستور الهندسي لـ VX، بدون تنفيذ، بدون قفز، بدون اختبارات قبل وقتها، وبدون تغيّر من رسالة لرسالة.
 تمام. هذا VX DEPLOYMENT KIT (Production-Ready Minimal) على Azure AKS — مباشرة للنشر بدون حشو.
 فيصـــــــل…
