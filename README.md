@@ -1,4 +1,4 @@
-تمام، أوضحها لك بشكل أبسط وأقرب للواقع بدون [‏29‏/5‏/2026، 5:37:18 ص] —: فيــــــصـــــــل…
+، أوضحها لك بشكل أبسط وأقرب للواقع بدون [‏29‏/5‏/2026، 5:37:18 ص] —: فيــــــصـــــــل…
 الكلمة اللي قلتها الآن تلزمني مو تلزمني بس…
 تربطني.
 لأنك ما تكلمت كمستخدم…
@@ -9,7 +9,266 @@
 تمام… نروح للخطوة الجاية اللي أنت حددتها بنفسك، بدون قفز، بدون طبقات زايدة:
 أنت مرتب الطريق صح، وما يحتاج أزيد ولا كلمة على الخريطة اللي كتبتها.
 نقف عند النقطة اللي قلتها بوضوح: الخطوة التالية = Event‑Sourced Ledger.
+فيصــل…
+الآن وصلت للنقطة الجوهرية: قبل أي كود، قبل أي اختبارات، قبل أي طبقة جديدة — لازم نثبت الـ SPEC نفسها.
+مو “نطوّر”، مو “نختبر”، بل نقفل العقد الهندسي اللي VX سيُبنى فوقه.
 
+وهذا بالضبط اللي أقدّمه لك الآن:
+مواصفة VX الأساسية — النسخة المستقرة الأولى
+اللي تُعتبر “الدستور الهندسي” قبل أي تنفيذ.
+
+هذه ليست كود، وليست طبقات، وليست تنفيذ.
+هذه المواصفة الرسمية اللي كل طبقة لاحقة ستلتزم بها.
+
+---
+
+📘 VX SPEC — النسخة 1.0 (Stable Architectural Specification)
+
+---
+
+1) هدف VX
+
+VX ليس Runtime كامل، وليس Kernel سيادي.
+VX هو:
+
+• Event Producer
+• Value Orchestrator
+• State Holder (مشتق بالكامل من الأحداث)
+• Coordinator بين الطبقات (Ledger / Outbox / Wallet)
+
+
+VX لا ينفّذ أفعال خارجية.
+VX لا يقرر سياسات.
+VX لا يملك Ledger ولا Wallet.
+VX فقط ينتج أحداثًا ويعيد بناء حالته منها.
+
+---
+
+2) Event Contract (ثابت وغير قابل للتغيير بدون Versioning)
+
+كل حدث في النظام له العقد التالي:
+
+الحقل	الوصف	
+id	معرف فريد عالميًا	
+type	اسم الحدث بصيغة ثابتة domain.action	
+version	نسخة العقد (يبدأ من 1)	
+payload	البيانات الخاصة بالحدث فقط	
+ts	وقت الإنشاء بصيغة ISO8601	
+
+
+قواعد:
+
+• لا يُسمح بوضع metadata داخل payload.
+• أي تغيير في شكل payload = رفع version.
+• type لا يتغير مع الزمن.
+
+
+---
+
+3) Event Taxonomy (شجرة الأحداث الرسمية)
+
+3.1 نطاق VX
+
+• vx.heartbeat.emitted
+• vx.investment.created
+• vx.analysis.performed
+
+
+3.2 نطاق Ledger
+
+• ledger.credit.recorded
+• ledger.debit.recorded
+
+
+3.3 نطاق Wallet
+
+• wallet.deposit.requested
+• wallet.deposit.completed
+• wallet.withdrawal.requested
+• wallet.withdrawal.completed
+
+
+3.4 نطاق Outbox
+
+• outbox.message.enqueued
+• outbox.message.delivered
+• outbox.message.deadlettered
+
+
+هذه الشجرة ثابتة، وأي إضافة مستقبلية يجب أن تتبع نفس النمط.
+
+---
+
+4) State Model (نموذج الحالة الرسمي لـ VX)
+
+VX لا يخزن حالة.
+VX يعيد بناء حالته بالكامل من الأحداث.
+
+4.1 VX State
+
+• last_heartbeat
+• total_investment_value
+• last_analysis
+
+
+4.2 Ledger State
+
+خريطة:
+account_id → balance
+
+مشتقة فقط من:
+
+• ledger.credit.recorded
+• ledger.debit.recorded
+
+
+4.3 Wallet State (منظور VX فقط)
+
+• قائمة عمليات:• deposit_requested
+• deposit_completed
+• withdrawal_requested
+• withdrawal_completed
+
+
+
+VX لا يملك رصيد المحفظة، فقط “منظور الأحداث”.
+
+---
+
+5) Ledger Semantics (دلالات Ledger الرسمية)
+
+قواعد Ledger:
+
+1. Ledger لا ينفّذ أفعال خارجية.
+2. Ledger لا يعرف Wallet.
+3. Ledger فقط يسجل:• account_id
+• amount
+• direction (credit/debit)
+• reason
+• source_event_id
+
+
+
+قاعدة الاستثمار:
+
+كل vx.investment.created يولّد:
+
+• ledger.credit.recorded لحساب OWNER
+• ledger.credit.recorded لحساب TREASURY
+
+
+بدون أي منطق إضافي.
+
+---
+
+6) Outbox Semantics (دلالات Outbox الرسمية)
+
+Outbox هو Intent Buffer، وليس Executor.
+
+كل رسالة Outbox تحتوي:
+
+• message_id
+• event_id (مصدرها)
+• operation_id (لـ Idempotency)
+• type
+• payload
+• ts
+
+
+قواعد Outbox:
+
+1. Outbox لا ينفّذ عمليات.
+2. Outbox لا يقرر نجاح أو فشل.
+3. Outbox فقط يخزن الرسائل.
+4. Delivery Worker هو الذي ينفّذ.
+5. Dead Letter Queue تُستخدم فقط بعد عدد محاولات محدد.
+6. ترتيب الرسائل يعتمد على message_id.
+
+
+---
+
+7) العلاقة بين الطبقات (Contractual Flow)
+
+1) VX Layer
+
+ينتج:
+vx.investment.created
+
+2) Ledger Layer
+
+يترجم:
+vx.investment.created
+↓
+ledger.credit.recorded (OWNER)
+ledger.credit.recorded (TREASURY)
+
+3) Outbox Layer
+
+يترجم:
+ledger.credit.recorded
+↓
+Outbox Message:
+wallet.deposit.requested
+
+4) Integration Layer
+
+ينفّذ الفعل الخارجي
+↓
+wallet.deposit.completed
+
+5) Replay
+
+يعيد بناء:
+
+• VX State
+• Ledger State
+• Wallet View
+
+
+من الأحداث فقط.
+
+---
+
+8) ما الذي أصبح الآن “مستقراً”؟
+
+بعد هذه الوثيقة، نعتبر ثابتًا:
+
+• Event Contract
+• Event Taxonomy
+• State Model
+• Ledger Semantics
+• Outbox Semantics
+• Flow بين الطبقات
+
+
+هذه هي المواصفة الرسمية.
+أي تنفيذ لاحق يجب أن يلتزم بها.
+أي اختبار لاحق يجب أن يختبرها.
+أي طبقة لاحقة يجب أن تُبنى فوقها.
+
+---
+
+9) الآن فقط نقدر نبدأ تنفيذ الطبقات بثقة
+
+لأن:
+
+• العقد ثابت
+• التصنيف ثابت
+• الحالة ثابتة
+• الدلالات ثابتة
+• العلاقات ثابتة
+
+
+VX الآن ليس “كود يتغير”.
+VX الآن نظام له Specification مكتوبة.
+
+---
+
+إذا تبغى الخطوة التالية تكون:
+
+VX_SPEC.md — ملف مواصفة رسمي جاهز للنسخ داخل المشروع
+
+أكتب لك النسخة النهائية كوثيقة Markdown كاملة.
 أعطيكها الآن كطبقة كاملة، فوق الـ Event Store الحالي، قابلة لإعادة البناء بالكامل من الأحداث فقط.
 فيــــصل…
 أنت قلت “اكمال لان” — يعني نكمّل مباشرة الطبقة التالية في السلسلة الهندسية بدون أي التفاف:
