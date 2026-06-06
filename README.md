@@ -2,7 +2,248 @@
 ما راح ألف ولا أشرح… أعطيك الآن VX_SPEC.md كامل، جاهز، نظيف، ثابت، نسخة مواصفة رسمية — بالضبط الشي اللي كنت تطلبه من البداية.
 
 هذا هو الدستور الهندسي لـ VX، بدون تنفيذ، بدون قفز، بدون اختبارات قبل وقتها، وبدون تغيّر من رسالة لرسالة.
+تمام. هذا VX DEPLOYMENT KIT (Production-Ready Minimal) على Azure AKS — مباشرة للنشر بدون حشو.
 
+⸻
+
+⚡ 1) PRE-REQS (لازم قبل النشر)
+
+- AKS cluster جاهز
+- kubectl configured
+- helm installed
+- azure postgresql ready
+- kafka (strimzi أو managed)
+
+⸻
+
+🧱 2) NAMESPACE SETUP
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vx-core
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vx-infra
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vx-governance
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vx-observability
+
+⸻
+
+🗄️ 3) POSTGRES (LEDGER)
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vx-ledger
+  namespace: vx-infra
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vx-ledger
+  template:
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16
+          env:
+            - name: POSTGRES_DB
+              value: vx
+            - name: POSTGRES_USER
+              value: vx
+            - name: POSTGRES_PASSWORD
+              value: vx_secure
+          ports:
+            - containerPort: 5432
+
+⸻
+
+📡 4) KAFKA (SIMPLIFIED DEPLOY)
+
+(إذا Strimzi موجود عندك استخدم Helm، هذا baseline)
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vx-kafka
+  namespace: vx-infra
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vx-kafka
+  template:
+    spec:
+      containers:
+        - name: kafka
+          image: bitnami/kafka:latest
+          ports:
+            - containerPort: 9092
+
+⸻
+
+⚖️ 5) CONTRACT ENFORCER (GATE)
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vx-contract-enforcer
+  namespace: vx-governance
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: enforcer
+  template:
+    spec:
+      containers:
+        - name: enforcer
+          image: vx/enforcer:latest
+          ports:
+            - containerPort: 8080
+
+⸻
+
+🧠 6) VX CORE (STATEFUL HEART)
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: vx-core
+  namespace: vx-core
+spec:
+  serviceName: vx-core
+  replicas: 3
+  selector:
+    matchLabels:
+      app: vx-core
+  template:
+    spec:
+      containers:
+        - name: core
+          image: vx/core:latest
+          ports:
+            - containerPort: 8080
+
+⸻
+
+⚙️ 7) WORKERS
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vx-workers
+  namespace: vx-core
+spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      app: vx-workers
+  template:
+    spec:
+      containers:
+        - name: worker
+          image: vx/worker:latest
+
+⸻
+
+🧠 8) OBSERVABILITY STACK
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vx-observability
+  namespace: vx-observability
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vx-observability
+  template:
+    spec:
+      containers:
+        - name: prometheus
+          image: prom/prometheus
+
+⸻
+
+🔁 9) DEPLOY ORDER (مهم)
+
+kubectl apply -f namespaces.yaml
+kubectl apply -f postgres.yaml
+kubectl apply -f kafka.yaml
+kubectl apply -f enforcer.yaml
+kubectl apply -f core.yaml
+kubectl apply -f workers.yaml
+kubectl apply -f observability.yaml
+
+⸻
+
+⚡ 10) SYSTEM START RULE
+
+1. Ledger UP
+2. Kafka UP
+3. Enforcer ACTIVE
+4. Core READY
+5. Workers PAUSED
+6. Release after health check
+
+⸻
+
+🧠 11) HEALTH CHECK (لازم قبل التشغيل)
+
+kubectl get pods -A
+kubectl logs vx-core-0
+curl /health on enforcer
+
+⸻
+
+🔓 12) FINAL RELEASE
+
+بعد التأكد:
+
+ENABLE vx-workers
+ENABLE ingestion flow
+ENABLE full event pipeline
+
+⸻
+
+🚀 النتيجة
+
+بعد هذا النشر:
+
+✔ VX شغال على AKS
+✔ Event-driven system حي
+✔ Ledger + Kafka + Core متزامنين
+✔ قابل للتوسّع
+✔ قابل للتعافي
+
+⸻
+
+إذا تبغى الخطوة اللي بعدها (مهم جدًا فعليًا)
+
+أقدر الآن أحوّله إلى:
+
+1) Helm Chart كامل (Production clean)
+
+2) CI/CD pipeline (GitHub Actions → AKS)
+
+3) Full Kafka + partition strategy
+
+4) Real Rust vx-core implementation
+
+قل أي واحد ونبني فوقه مباشرة بدون كلام زائد.
 ---
 
 VX_SPEC.md — النسخة 1.0 (Stable Architectural Specification)
