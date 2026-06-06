@@ -6,7 +6,234 @@
 وكصاحب مشروع…
 وكشخص احترمني من أول يوم.
 أنت صادق… التجميع اللي حطيته الآن مشروع موحّد قوي بس مو “كل اللي تكلمنا عنه” من ناحية VX‑EMPIRE السيادية—هو يجمع:
+تمام… نروح للخطوة الجاية اللي أنت حددتها بنفسك، بدون قفز، بدون طبقات زايدة:
 
+1. Event Identity
+2. Event Store فعلي
+3. Replay Mechanism
+4. State Reconstruction
+
+
+أعطيك طبقة واحدة تالية فوق VXCore الحالي، قابلة للتشغيل والاختبار.
+
+---
+
+1) Event Store + Event ID
+
+# vx_events.py
+
+from __future__ import annotations
+import sqlite3, json, time
+from datetime import datetime
+
+DB_PATH = "vx_events.db"
+
+def db():
+    return sqlite3.connect(DB_PATH, check_same_thread=False)
+
+def init_event_store():
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS events (
+        id TEXT PRIMARY KEY,
+        type TEXT,
+        payload TEXT,
+        ts TEXT
+    )
+    """)
+    conn.commit()
+    conn.close()
+
+def new_event_id(prefix: str = "evt") -> str:
+    return f"{prefix}_{int(time.time() * 1000)}"
+
+def append_event(event_type: str, envelope: dict):
+    conn = db()
+    cur = conn.cursor()
+    eid = envelope.get("id") or new_event_id()
+    env = dict(envelope)
+    env["id"] = eid
+    env["type"] = event_type
+    env["ts"] = env.get("ts") or datetime.utcnow().isoformat()
+
+    cur.execute("""
+    INSERT INTO events (id, type, payload, ts)
+    VALUES (?, ?, ?, ?)
+    """, (eid, event_type, json.dumps(env, ensure_ascii=False), env["ts"]))
+
+    conn.commit()
+    conn.close()
+    return env
+
+def load_events(event_type: str | None = None) -> list[dict]:
+    conn = db()
+    cur = conn.cursor()
+    if event_type:
+        cur.execute("SELECT payload FROM events WHERE type=? ORDER BY ts ASC", (event_type,))
+    else:
+        cur.execute("SELECT payload FROM events ORDER BY ts ASC")
+    rows = cur.fetchall()
+    conn.close()
+    return [json.loads(r[0]) for r in rows]
+
+
+---
+
+2) ربط VXCore بالـ Event Store (Event Identity + Envelope)
+
+# vx_core.py
+
+from __future__ import annotations
+from datetime import datetime
+
+OWNER_ID = "فــيــصــل"
+OWNER_SHARE = 0.5
+TREASURY_ID = "TREASURY"
+TREASURY_SHARE = 0.5
+
+
+class VXCore:
+    def __init__(self, logger, event_store_append, wallet_deposit, new_event_id):
+        self.logger = logger
+        self.append = event_store_append   # append_event(type, envelope)
+        self.wallet_deposit = wallet_deposit
+        self.new_event_id = new_event_id
+        self.state = {}
+
+    def _envelope(self, event_type: str, payload: dict) -> dict:
+        return {
+            "id": self.new_event_id("vx"),
+            "type": event_type,
+            "version": 1,
+            "payload": payload,
+            "ts": datetime.utcnow().isoformat()
+        }
+
+    def _emit(self, event_type: str, payload: dict) -> dict:
+        env = self._envelope(event_type, payload)
+        return self.append(event_type, env)
+
+    def heartbeat(self, metrics: dict):
+        env = self._emit("vx.heartbeat", {"metrics": metrics})
+        self.logger.info(f"[VX] heartbeat: {metrics}")
+        return env
+
+    def register_ai_value(self, source: str, estimated_value: float):
+        owner_part = round(estimated_value * OWNER_SHARE, 6)
+        treasury_part = round(estimated_value * TREASURY_SHARE, 6)
+
+        env = self._emit("vx.investment", {
+            "source": source,
+            "total_value": estimated_value,
+            "owner_id": OWNER_ID,
+            "owner_share": owner_part,
+            "treasury_id": TREASURY_ID,
+            "treasury_share": treasury_part,
+        })
+
+        if owner_part > 0:
+            self.wallet_deposit(OWNER_ID, owner_part)
+        if treasury_part > 0:
+            self.wallet_deposit(TREASURY_ID, treasury_part)
+
+        self.logger.info(
+            f"[VX] استثمار من {source} | إجمالي: {estimated_value} | "
+            f"مالك: {owner_part} | بيت مال: {treasury_part}"
+        )
+        return env
+
+    def analyze_issue(self, issue: str) -> dict:
+        env = self._emit("vx.analysis", {
+            "issue": issue,
+            "proposed_action": f"analyze_and_patch_{issue}",
+        })
+        self.state["last_analysis"] = {
+            "issue": issue,
+            "ts": env["ts"],
+            "id": env["id"],
+        }
+        self.logger.info(f"[VX] تحليل مشكلة: {issue}")
+        return env
+
+
+---
+
+3) Replay + State Reconstruction
+
+# vx_replay.py
+
+from __future__ import annotations
+
+def replay_state(initial_state: dict, events: list[dict]) -> dict:
+    """
+    State Reconstruction من الأحداث فقط.
+    """
+    state = dict(initial_state)
+
+    for evt in events:
+        et = evt["type"]
+        pl = evt["payload"]
+
+        if et == "vx.heartbeat":
+            state["last_heartbeat"] = {
+                "metrics": pl["metrics"],
+                "ts": evt["ts"],
+                "id": evt["id"],
+            }
+
+        elif et == "vx.investment":
+            total = state.get("total_investment", 0.0)
+            state["total_investment"] = total + pl["total_value"]
+
+        elif et == "vx.analysis":
+            state["last_analysis"] = {
+                "issue": pl["issue"],
+                "ts": evt["ts"],
+                "id": evt["id"],
+            }
+
+    return state
+
+
+---
+
+4) مثال تشغيل متكامل (نواة + Store + Replay)
+
+# main_vx.py
+
+from vx_events import init_event_store, append_event, load_events, new_event_id
+from vx_core import VXCore
+from vx_replay import replay_state
+
+class Logger:
+    def info(self, m): print("[INFO]", m)
+
+def wallet_deposit(user_id, amount):
+    print(f"[WALLET] deposit → {user_id}: {amount}")
+
+def main():
+    init_event_store()
+    logger = Logger()
+    vx = VXCore(logger, append_event, wallet_deposit, new_event_id)
+
+    vx.heartbeat({"cpu": 0.1, "db": "ok"})
+    vx.register_ai_value("generator_v1", 100.0)
+    vx.analyze_issue("high_latency")
+
+    events = load_events()
+    rebuilt = replay_state({}, events)
+
+    print("\n[REPLAYED STATE]")
+    print(rebuilt)
+
+if __name__ == "__main__":
+    main()
+
+
+هذا بالضبط “الخطوة التالية” اللي قلتها:
+هوية حدث → تخزين فعلي → Replay → إعادة بناء حالة.
+بدون قفز لطبقات أعلى، وبدون حشو مصطلحات.
 • لوجر + EventBus
 • EmpireCore (تسجيل وحدات)
 • Security + Wallet + TRMIDAL + HTTP Server
