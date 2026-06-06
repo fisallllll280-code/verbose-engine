@@ -1,4 +1,120 @@
-# المتطلبات
+ملف الهوية `identity.py`
+
+IDENTITY_CODE = "VX-ID-FSL-5090-42679-ΩX"
+ACTIVATION_MESSAGE = "VX-AUTH-FSL-ENTRY-909X"
+
+
+---
+
+الأمن `security/auth.py`
+
+from identity import IDENTITY_CODE, ACTIVATION_MESSAGE
+
+class VXSecurity:
+    def __init__(self):
+        self._active = False
+
+    def activate(self, token: str) -> bool:
+        if token in (IDENTITY_CODE, ACTIVATION_MESSAGE):
+            self._active = True
+            return True
+        return False
+
+    def is_active(self) -> bool:
+        return self._active
+
+
+---
+
+النواة `core/engine.py`
+
+class VXCore:
+    def __init__(self, security):
+        if not security.is_active():
+            raise RuntimeError("VX locked: identity not activated")
+        self.security = security
+        self.state = {}
+        print("VXCore initialized.")
+
+    def emit(self, event: str, data: dict | None = None):
+        print(f"[CORE EVENT] {event} :: {data or {}}")
+
+
+---
+
+الشبكة `grid/router.py`
+
+class VXGrid:
+    def __init__(self, core):
+        self.core = core
+        self.nodes = []
+        print("VXGrid online.")
+
+    def add_node(self, node_id: str):
+        self.nodes.append(node_id)
+        self.core.emit("GRID_NODE_ADDED", {"node": node_id})
+
+
+---
+
+الروابط `link/link_engine.py`
+
+class VXLinkEngine:
+    def __init__(self, grid):
+        self.grid = grid
+        print("VXLinkEngine ready.")
+
+    def broadcast(self, message: str):
+        print(f"[LINK BROADCAST] {message} to {len(self.grid.nodes)} nodes")
+
+
+---
+
+دورة الحياة `runtime/lifecycle.py`
+
+class VXRuntime:
+    def __init__(self, core, grid, link):
+        self.core = core
+        self.grid = grid
+        self.link = link
+
+    def start(self):
+        self.core.emit("RUNTIME_START", {})
+        self.grid.add_node("NODE-01")
+        self.link.broadcast("VX runtime started.")
+        print("VXRuntime running.")
+
+
+---
+
+ملف التشغيل الرئيسي `main.py`
+
+from security.auth import VXSecurity
+from core.engine import VXCore
+from grid.router import VXGrid
+from link.link_engine import VXLinkEngine
+from runtime.lifecycle import VXRuntime
+
+def main():
+    security = VXSecurity()
+
+    token = input("ادخل رمز الهوية أو رسالة التفعيل: ").strip()
+    if not security.activate(token):
+        print("رمز غير صحيح. النظام لن يعمل.")
+        return
+
+    core = VXCore(security)
+    grid = VXGrid(core)
+    link = VXLinkEngine(grid)
+    runtime = VXRuntime(core, grid, link)
+
+    runtime.start()
+
+if __name__ == "__main__":
+    main()
+
+
+لو حاب نكمل نضيف ملفات ثانية (events, metrics, api)، أطلعها لك مباشرة بنفس الأسلوب.# المتطلبات
 pip install fastapi uvicorn httpx
 ملف الهوية `identity.py`
 
