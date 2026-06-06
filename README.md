@@ -6,7 +6,342 @@ VX كنظام موزّع جميل… إلى منظومة حقيقية عملاق
 نظام سيادي مطوّر إلى آخر طور مسموح به
 منظومة حكم وتشغيل ذاتي، واعية بسلوكها، تتكلّم، تتطوّر، وتصحّح نفسها—لكن تحت حوكمة صارمة.
 
+---أوكي، هذا سيرفر حقيقي فعلي واحد تشغّله ويعطيك:
+
+• /emit لضخ أحداث
+• /state حالة النظام
+• /cluster حالة النودز
+• /vx/chat محادثة مع VX
+• تصحيح ذاتي + تطوّر ذاتي بسيط
+
+
+1) المتطلبات
+
+pip install fastapi uvicorn
+
+
 ---
+
+2) ملف واحد: `vx_server.py`
+
+import asyncio
+import time
+import json
+from fastapi import FastAPI, APIRouter
+from pydantic import BaseModel
+import uvicorn
+
+# ================== KERNEL ==================
+
+class VXEventLoop:
+    def __init__(self):
+        self.q = asyncio.Queue()
+
+    async def emit(self, event):
+        await self.q.put(event)
+
+    async def next(self):
+        return await self.q.get()
+
+
+class VXStateManager:
+    def __init__(self):
+        self.data = {}
+
+    def update(self, patch: dict):
+        self.data.update(patch)
+
+    def snapshot(self):
+        return dict(self.data)
+
+
+class VXLedgerManager:
+    def __init__(self):
+        self.chain = []
+
+    def commit(self, record: dict):
+        self.chain.append(record)
+
+    def tail(self, n: int = 50):
+        return self.chain[-n:]
+
+
+class VXConsensus:
+    def __init__(self, nodes):
+        self.nodes = nodes
+
+    def approve(self, event):
+        votes = [n.evaluate(event) for n in self.nodes]
+        allow = sum(1 for v in votes if v["decision"] == "ALLOW")
+        return {"approved": allow > len(votes)//2, "votes": votes}
+
+
+# ================== LOGIC CONFIG ==================
+
+LOGIC = {
+    "rule_version": 1,
+    "allow_even_ids": True
+}
+
+# ================== CLUSTER / NODE ==================
+
+class VXNode:
+    def __init__(self, node_id: int):
+        self.id = node_id
+        self.state = {"counter": 0, "errors": 0}
+
+    def evaluate(self, event):
+        if LOGIC.get("allow_even_ids", True):
+            return {"decision": "ALLOW" if event.id % 2 == 0 else "BLOCK"}
+        return {"decision": "ALLOW"}
+
+    def process(self, event):
+        dec = self.evaluate(event)
+        if dec["decision"] == "ALLOW":
+            self.state["counter"] += 1
+            return {"node": self.id, "status": "OK"}
+        else:
+            self.state["errors"] += 1
+            return {"node": self.id, "status": "BLOCKED"}
+
+
+class VXClusterManager:
+    def __init__(self, size: int):
+        self.nodes = [VXNode(i) for i in range(size)]
+
+    def replace_node(self, node_id: int):
+        self.nodes[node_id] = VXNode(node_id)
+
+    def metrics(self):
+        return [n.state for n in self.nodes]
+
+
+# ================== GOVERNANCE ==================
+
+class VXGovernance:
+    def __init__(self, policies: dict):
+        self.policies = policies
+
+    def allow(self, action: str) -> bool:
+        return self.policies.get(action, False)
+
+
+# ================== SERVICES ==================
+
+class VXRuntimeService:
+    def __init__(self, kernel, cluster):
+        self.kernel = kernel
+        self.cluster = cluster
+
+    async def run(self):
+        while True:
+            event = await self.kernel.event_loop.next()
+            cons = VXConsensus(self.cluster.nodes).approve(event)
+            if not cons["approved"]:
+                self.kernel.ledger.commit({
+                    "type": "REJECTED",
+                    "event": event.__dict__,
+                    "votes": cons["votes"]
+                })
+                continue
+            results = []
+            for n in self.cluster.nodes:
+                res = n.process(event)
+                results.append(res)
+            self.kernel.state.update({"last_event": event.type})
+            self.kernel.ledger.commit({
+                "type": "APPLIED",
+                "event": event.__dict__,
+                "results": results
+            })
+
+
+class VXAutoCorrection:
+    def __init__(self, cluster, kernel, governance):
+        self.cluster = cluster
+        self.kernel = kernel
+        self.gov = governance
+
+    def tick(self):
+        for n in self.cluster.nodes:
+            if n.state.get("errors", 0) > 5 and self.gov.allow("replace_node"):
+                self.cluster.replace_node(n.id)
+                self.kernel.ledger.commit({
+                    "type": "AUTO_CORRECTION",
+                    "node": n.id,
+                    "action": "NODE_REPLACED"
+                })
+
+
+class MockLLM:
+    def __call__(self, prompt: str) -> str:
+        # اقتراح بسيط لتغيير المنطق بعد فترة
+        return """
+        {
+          "new_logic": {
+            "rule_version": 2,
+            "allow_even_ids": false
+          }
+        }
+        """
+
+
+class VXSelfEvolver:
+    def __init__(self, llm, kernel, governance):
+        self.llm = llm
+        self.kernel = kernel
+        self.gov = governance
+
+    def propose(self):
+        window = self.kernel.ledger.tail(30)
+        prompt = {
+            "task": "propose_logic_update",
+            "logic": LOGIC,
+            "events": window
+        }
+        resp = self.llm(json.dumps(prompt))
+        try:
+            return json.loads(resp)
+        except Exception:
+            return {"error": "invalid_llm_response", "raw": resp}
+
+    def apply(self, proposal):
+        if not self.gov.allow("update_logic"):
+            return {"status": "DENIED"}
+        new_logic = proposal.get("new_logic")
+        if not isinstance(new_logic, dict):
+            return {"status": "INVALID"}
+        LOGIC.update(new_logic)
+        self.kernel.ledger.commit({
+            "type": "LOGIC_UPDATE",
+            "new_logic": new_logic
+        })
+        return {"status": "APPLIED", "logic": LOGIC}
+
+
+# ================== API ==================
+
+app = FastAPI(title="VX Sovereign Server")
+vx = {}
+
+class EventIn(BaseModel):
+    type: str
+    payload: dict
+
+@app.post("/emit")
+async def emit(evt: EventIn):
+    event = type("E", (), {
+        "id": hash(evt.type + str(evt.payload)) % 1_000_000,
+        "type": evt.type,
+        "payload": evt.payload
+    })
+    await vx["kernel"].event_loop.emit(event)
+    return {"status": "queued", "event_id": event.id}
+
+@app.get("/state")
+def state():
+    return vx["kernel"].state.snapshot()
+
+@app.get("/cluster")
+def cluster_state():
+    return [n.state for n in vx["cluster"].nodes]
+
+@app.get("/ledger")
+def ledger():
+    return vx["kernel"].ledger.chain
+
+
+# ====== CHAT (VX يتكلم معك) ======
+
+chat_router = APIRouter()
+
+class ChatIn(BaseModel):
+    message: str
+
+@chat_router.post("/chat")
+async def chat(body: ChatIn):
+    state = vx["kernel"].state.snapshot()
+    counter = state.get("chat_counter", 0) + 1
+    vx["kernel"].state.update({"chat_counter": counter})
+    reply = {
+        "vx_reply": f"يا فيصل، هذه رسالتك رقم {counter}. آخر حدث: {state.get('last_event', 'NONE')}",
+        "ts": time.time(),
+        "state": state
+    }
+    vx["kernel"].ledger.commit({
+        "type": "CHAT",
+        "user_message": body.message,
+        "vx_reply": reply
+    })
+    return reply
+
+app.include_router(chat_router, prefix="/vx")
+
+
+# ================== BOOTSTRAP ==================
+
+async def bootstrap():
+    global vx
+    kernel = type("K", (), {})()
+    kernel.event_loop = VXEventLoop()
+    kernel.state = VXStateManager()
+    kernel.ledger = VXLedgerManager()
+
+    cluster = VXClusterManager(size=5)
+    governance = VXGovernance({
+        "update_logic": True,
+        "replace_node": True
+    })
+
+    runtime = VXRuntimeService(kernel, cluster)
+    asyncio.create_task(runtime.run())
+
+    auto = VXAutoCorrection(cluster, kernel, governance)
+    evolver = VXSelfEvolver(MockLLM(), kernel, governance)
+
+    async def auto_loop():
+        while True:
+            auto.tick()
+            await asyncio.sleep(3)
+
+    async def evolve_loop():
+        while True:
+            proposal = evolver.propose()
+            evolver.apply(proposal)
+            await asyncio.sleep(15)
+
+    asyncio.create_task(auto_loop())
+    asyncio.create_task(evolve_loop())
+
+    vx = {"kernel": kernel, "cluster": cluster}
+
+
+if __name__ == "__main__":
+    asyncio.run(bootstrap())
+    uvicorn.run("vx_server:app", host="0.0.0.0", port=8000, reload=True)
+
+
+---
+
+3) الاستخدام السريع
+
+تشغيل السيرفر:
+
+python vx_server.py
+
+
+إرسال حدث:
+
+curl -X POST http://localhost:8000/emit \
+  -H "Content-Type: application/json" \
+  -d '{"type":"USER_ACTION","payload":{"action":"login"}}'
+
+
+محادثة مع VX:
+
+curl -X POST http://localhost:8000/vx/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message":"شلونك يا VX؟"}'
 
 1) المعمارية النهائية — VX Sovereign vMAX
 
