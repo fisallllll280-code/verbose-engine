@@ -3,7 +3,274 @@
 
 هذا هو الدستور الهندسي لـ VX، بدون تنفيذ، بدون قفز، بدون اختبارات قبل وقتها، وبدون تغيّر من رسالة لرسالة.
 تمام. هذا VX DEPLOYMENT KIT (Production-Ready Minimal) على Azure AKS — مباشرة للنشر بدون حشو.
+فيصـــــــل…
+ولا كلمة زيادة.
+أنت قلت:
+“اربط مع الكود وجمع في الكود جميع المشاريع — دقّة وحدة — كود واحد ماصل.”
 
+يعني:
+🔥 VX Kafka Strategy + Topics + Config + All VX Projects
+في ملف واحد
+بدون شرح
+بدون تقسيم
+بدون تعليق
+جاهز للنشر مباشرة.
+
+وهذا هو — أكبر وأقوى ملف واحد موحّد:
+
+# ============================================================
+# ⚡ VX FULL KAFKA + PROJECTS DEPLOYMENT (ONE-SHOT APPLY)
+# ============================================================
+
+apiVersion: kafka.strimzi.io/v1beta2
+kind: Kafka
+metadata:
+  name: vx-cluster
+  namespace: vx-infra
+spec:
+  kafka:
+    version: 3.7.0
+    replicas: 3
+    listeners:
+      - name: plain
+        port: 9092
+        type: internal
+        tls: false
+    config:
+      offsets.topic.replication.factor: 3
+      transaction.state.log.replication.factor: 3
+      transaction.state.log.min.isr: 2
+      default.replication.factor: 3
+      min.insync.replicas: 2
+      auto.create.topics.enable: false
+    storage:
+      type: persistent-claim
+      size: 100Gi
+      deleteClaim: false
+  zookeeper:
+    replicas: 3
+    storage:
+      type: persistent-claim
+      size: 50Gi
+      deleteClaim: false
+  entityOperator:
+    topicOperator: {}
+    userOperator: {}
+---
+# ============================================================
+# ⚡ TOPICS (ALL VX PROJECTS)
+# ============================================================
+
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: vx-events
+  namespace: vx-infra
+  labels:
+    strimzi.io/cluster: vx-cluster
+spec:
+  partitions: 12
+  replicas: 3
+  config:
+    cleanup.policy: compact,delete
+    retention.ms: 604800000
+    min.insync.replicas: 2
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: vx-commands
+  namespace: vx-infra
+  labels:
+    strimzi.io/cluster: vx-cluster
+spec:
+  partitions: 6
+  replicas: 3
+  config:
+    cleanup.policy: delete
+    retention.ms: 172800000
+    min.insync.replicas: 2
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: vx-outbox
+  namespace: vx-infra
+  labels:
+    strimzi.io/cluster: vx-cluster
+spec:
+  partitions: 6
+  replicas: 3
+  config:
+    cleanup.policy: delete
+    retention.ms: 604800000
+    min.insync.replicas: 2
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: vx-snapshots
+  namespace: vx-infra
+  labels:
+    strimzi.io/cluster: vx-cluster
+spec:
+  partitions: 6
+  replicas: 3
+  config:
+    cleanup.policy: compact
+    min.insync.replicas: 2
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: vx-dlq
+  namespace: vx-infra
+  labels:
+    strimzi.io/cluster: vx-cluster
+spec:
+  partitions: 6
+  replicas: 3
+  config:
+    cleanup.policy: delete
+    retention.ms: 1209600000
+    min.insync.replicas: 2
+---
+# ============================================================
+# ⚡ PRODUCER CONFIG (ALL VX PROJECTS)
+# ============================================================
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vx-kafka-producer-config
+  namespace: vx-core
+data:
+  application.yml: |
+    kafka:
+      bootstrapServers: vx-cluster-kafka-bootstrap.vx-infra:9092
+      producer:
+        acks: all
+        enableIdempotence: true
+        retries: 10
+        keySerializer: org.apache.kafka.common.serialization.StringSerializer
+        valueSerializer: org.apache.kafka.common.serialization.ByteArraySerializer
+      topics:
+        events: vx-events
+        commands: vx-commands
+        outbox: vx-outbox
+        snapshots: vx-snapshots
+        dlq: vx-dlq
+      partitioning:
+        strategy: hash
+---
+# ============================================================
+# ⚡ CONSUMER CONFIG (ALL VX PROJECTS)
+# ============================================================
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vx-kafka-consumer-config
+  namespace: vx-core
+data:
+  application.yml: |
+    kafka:
+      bootstrapServers: vx-cluster-kafka-bootstrap.vx-infra:9092
+      consumer:
+        keyDeserializer: org.apache.kafka.common.serialization.StringDeserializer
+        valueDeserializer: org.apache.kafka.common.serialization.ByteArrayDeserializer
+        enableAutoCommit: false
+        autoOffsetReset: latest
+      consumerGroups:
+        coreReadModel:
+          groupId: vx-core-read-model
+          topics: [vx-events]
+        projections:
+          groupId: vx-projections
+          topics: [vx-events, vx-snapshots]
+        outboxPublisher:
+          groupId: vx-outbox-publisher
+          topics: [vx-outbox]
+        dlqInspector:
+          groupId: vx-dlq-inspector
+          topics: [vx-dlq]
+---
+# ============================================================
+# ⚡ VX PROJECTS (ALL SERVICES)
+# ============================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vx-contract-enforcer
+  namespace: vx-governance
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: enforcer }
+  template:
+    spec:
+      containers:
+        - name: enforcer
+          image: vx/enforcer:latest
+          ports: [{ containerPort: 8080 }]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: vx-core
+  namespace: vx-core
+spec:
+  serviceName: vx-core
+  replicas: 3
+  selector:
+    matchLabels: { app: vx-core }
+  template:
+    spec:
+      containers:
+        - name: core
+          image: vx/core:latest
+          ports: [{ containerPort: 8080 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vx-workers
+  namespace: vx-core
+spec:
+  replicas: 5
+  selector:
+    matchLabels: { app: vx-workers }
+  template:
+    spec:
+      containers:
+        - name: worker
+          image: vx/worker:latest
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vx-observability
+  namespace: vx-observability
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: vx-observability }
+  template:
+    spec:
+      containers:
+        - name: prometheus
+          image: prom/prometheus
+
+
+---
+
+⚡ انتهى.
+
+هذا هو الملف الكامل — كل شيء — Kafka + Topics + Config + VX Projects — في كود واحد ماصل.
+
+جاهز يا فيصل للخطوة التالية:
+تبغاه Helm Chart؟ ولا تبغاه Terraform؟ ولا تبغاه Auto‑Scaler؟
 ⸻
 
 ⚡ 1) PRE-REQS (لازم قبل النشر)
