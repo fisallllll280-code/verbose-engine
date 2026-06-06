@@ -1,5 +1,270 @@
 أحسّ الطاقة اللي في كلامك يا فيصل… خلنا نحولها لصورةتمام—هذا دمج كامل لكل اللي بنيته (VX-100 + Ledger + Arbitration + Evolution + Vault + Connector) في نواة واحدة متكاملة + رسم هندسي داخل الكود نفسه بشكل واضح وفعلي.
-خلّني أكون صريح معك: ما تقدر “تتواصل مع نظام VX” كأنه كيان مستقل أو يأخذ “قوّة منك”. اللي عندك هو برنامج Python فقط. أقصى شيء تقدر تسويه هو تشغيله والتفاعل معه كواجهة أوامر.
+خارطة الطريق الرسمية لمشروع VX1000
+هذا أقصى نسخة “نظام واحد شغال + عربي + تواصل مباشر” بدون حشو إضافي. شغّال كواجهة تشغيل فقط:
+
+import time
+import uuid
+import hashlib
+# =========================
+# EVENT
+# =========================
+class Event:
+    def __init__(self, t, p):
+        self.id = str(uuid.uuid4())
+        self.t = t
+        self.p = p
+        self.ts = time.time()
+# =========================
+# LEDGER
+# =========================
+class Ledger:
+    def __init__(self):
+        self.c = []
+    def h(self, d):
+        return hashlib.sha256(d.encode()).hexdigest()
+    def add(self, r):
+        prev = self.c[-1]["h"] if self.c else "GEN"
+        b = {"r": r, "p": prev, "h": self.h(str(r)+prev), "ts": time.time()}
+        self.c.append(b)
+# =========================
+# BRAIN
+# =========================
+class Brain:
+    def decide(self, e, s):
+        return "ALLOW" if s["n"] % 2 == 0 else "MODIFY"
+# =========================
+# EVOLUTION
+# =========================
+class Evo:
+    def step(self, s):
+        return {"mode": "OPT" if s["n"] > 5 else "INIT"}
+# =========================
+# VX CORE
+# =========================
+class VX:
+    def __init__(self):
+        self.s = {"n": 0, "mode": "INIT"}
+        self.l = Ledger()
+        self.b = Brain()
+        self.e = Evo()
+    def send(self, t, p):
+        ev = Event(t, p)
+        self.s["n"] += 1
+        d = self.b.decide(ev, self.s)
+        self.s.update(self.e.step(self.s))
+        self.l.add({"event": ev.t, "decision": d, "state": dict(self.s)})
+        return {"حدث": ev.t, "قرار": d, "حالة": self.s}
+    def ask(self, q):
+        if "حالة" in q: return self.s
+        if "سجل" in q: return len(self.l.c)
+        return "النظام شغال"
+# =========================
+# CLI عربي
+# =========================
+if __name__ == "__main__":
+    vx = VX()
+    print("VX شغال")
+    print("إرسال | سؤال | سجل | خروج")
+    while True:
+        x = input("VX> ")
+        if x == "خروج":
+            break
+        if x.startswith("إرسال"):
+            _, t = x.split(maxsplit=1)
+            print(vx.send(t, {}))
+        elif x.startswith("سؤال"):
+            _, q = x.split(maxsplit=1)
+            print(vx.ask(q))
+        elif x == "سجل":
+            print(vx.l.c[-3:])
+        else:
+            print("غير معروف")
+بما إنك بدأت فعلياً بالـ repo والـ commits، نرتب VX1000 كـ مشروع نظام، مو سكربت.
+
+---
+
+المرحلة 0 – التأسيس (أنت فيها الآن)
+
+• هيكل المشروع:• /core: النوى الأساسية (Node, Event, Ledger, State).
+• /network: منطق الشبكة (روابط، broadcast، topology).
+• /consensus: لاحقاً، بروتوكولات الإجماع.
+• /governance: لاحقاً، التصويت والصلاحيات.
+• /docs: مواصفات VX (دستور VX).
+
+• أهداف المرحلة:• تثبيت أسماء الوحدات (VXNode, VXNetwork, VXEvent, VXLedger…).
+• README يشرح: ما هو VX1000؟ + فلسفة النوى.
+• سكربت تشغيل بسيط: python main.py → يشغل شبكة مصغرة (مثلاً 50–100 نواة).
+
+
+
+---
+
+المرحلة 1 – نواة VXNode + شبكة VXNetwork
+
+• VXNode:• خصائص أساسية: id, role, peers, state, ledger.
+• واجهات:• handle(event)
+• broadcast(event)
+• connect(peer)
+
+
+• VXNetwork:• توليد N نواة (1000 لاحقاً).
+• توزيع الأدوار (event/state/decision/rule/exec/ledger/gov/evo/sys).
+• بناء topology (Ring + Random Mesh).
+
+• هدف المرحلة:• تشغيل شبكة 100–200 نواة بنجاح.
+• طباعة إحصائيات: عدد الأحداث، عدد السجلات، عدد العقد حسب الدور.
+
+
+
+---
+
+المرحلة 2 – طبقات VX (Layered Roles)
+
+هنا نربط بين فلسفة VX-100 و شبكة VX1000:
+
+• تعريف الأدوار رسمياً:• event → Event Mesh
+• state → State Shards
+• decision → Decision Grid
+• rule → Rule Fabric
+• exec → Execution Cluster
+• ledger → Ledger Ring
+• gov → Governance Council
+• evo → Evolution Lab
+• sys → System Spine
+
+• لكل Role:• سلوك افتراضي واضح داخل handle(event).
+• State خاص (مثلاً: state nodes تمسك counters/shards، ledger يمسك snapshots…).
+
+• هدف المرحلة:• كل حدث يمر فعلياً عبر أكثر من طبقة (event → state → decision → ledger…).
+
+
+
+---
+
+المرحلة 3 – Ledger & State بشكل جدي
+
+• Ledger Ring:• توحيد شكل السجل:• event_id, timestamp, node, state_snapshot, hash (لاحقاً).
+
+• إمكانية:• تصدير ledger إلى ملف (JSON/NDJSON).
+• إعادة تشغيل النظام من snapshot.
+
+
+• State Shards:• تقسيم الحالة حسب:• shard_id أو key_range.
+
+• كل Node من نوع state يمسك جزء من الحالة.
+
+• هدف المرحلة:• تشغيل سيناريو:• إرسال 1000 حدث →
+• تحديث حالة موزعة →
+• تسجيلها في ledger →
+• طباعة ملخص نهائي.
+
+
+
+
+---
+
+المرحلة 4 – Consensus Layer (VX-Consensus v0)
+
+• إضافة Role جديد: consensus
+• أبسط بروتوكول مبدئي:• مجموعة من عقد consensus تستقبل:• قرارات من decision أو سجلات من ledger.
+
+• تقوم بـ:• PROPOSE → VOTE → COMMIT (بشكل مبسط).
+
+
+• هدف المرحلة:• لا يُعتبر حدث “مقبول رسمياً” إلا إذا:• تم تسجيله في ledger
+• وتمت الموافقة عليه من consensus (مثلاً أغلبية 3 من 5).
+
+
+
+
+---
+
+المرحلة 5 – Governance VX
+
+• Governance Council (gov nodes):• إدارة:• من يحق له أن يكون consensus.
+• تغيير بارامترات الشبكة (عدد العقد، أدوار، أولويات).
+
+• منطق تصويت بسيط:• PROPOSAL → VOTE → APPLY.
+
+
+• أمثلة قرارات:• رفع عدد عقد ledger.
+• تغيير نسبة الموافقة المطلوبة في consensus.
+
+• هدف المرحلة:• جعل VX1000 “قابل للتعديل من الداخل” عبر gov، مو عبر تعديل الكود فقط.
+
+
+
+---
+
+المرحلة 6 – Evolution VX
+
+• Evolution Lab (evo nodes):• مراقبة:• الأداء (latency, errors).
+• كثافة الأحداث.
+
+• اقتراح:• إعادة توزيع الأدوار.
+• ترقية منطق بعض العقد (نسخة v1 → v2).
+
+
+• هدف المرحلة:• VX1000 يبدأ “يتكيّف” مع الحمل، مو ثابت.
+
+
+
+---
+
+المرحلة 7 – System Spine & Observability
+
+• System Nodes (sys):• مراقبة:• صحة العقد.
+• عدد الأحداث.
+• حجم ledger.
+
+• توفير:• واجهة مراقبة (حتى لو CLI).
+
+
+• هدف المرحلة:• أمر واحد مثل:• python monitor.py
+• يعطيك صورة عن الشبكة:• كم Node شغّال
+• كم Event
+• كم Commit
+• حالة الـ Shards
+
+
+
+
+
+---
+
+المرحلة 8 – تثبيت VX1000 كـ “دستور هندسة”
+
+• توثيق رسمي في /docs:• VX Philosophy: نوى، أدوار، طبقات.
+• VX1000 Network Spec:• أنواع العقد
+• أنواع الأحداث
+• شكل الـ ledger
+• بروتوكول الـ consensus
+• نموذج الـ governance
+
+
+• إعداد:• مثال تشغيل جاهز:• examples/local_100.py
+• examples/network_1000.py
+
+
+
+
+---
+
+كيف تكمل من اليوم؟
+
+خطوتك الجاية الواقعية:
+
+1. أنشئ مجلدات:• core/, network/, consensus/, governance/, docs/
+
+2. انقل VXNode و VXNetwork إلى:• core/node.py
+• network/network.py
+
+3. أضف ملف:• docs/ROADMAP_VX1000.md
+• وانسخ فيه هذه الخارطة كـ “النسخة 0.1 من دستور VX1000”.
+
+
+
+لو حاب، أقدر أكتب لك النسخة الجاهزة لـ ROADMAP_VX1000.md بصيغة Markdown تحطها مباشرة في الـ repo.خلّني أكون صريح معك: ما تقدر “تتواصل مع نظام VX” كأنه كيان مستقل أو يأخذ “قوّة منك”. اللي عندك هو برنامج Python فقط. أقصى شيء تقدر تسويه هو تشغيله والتفاعل معه كواجهة أوامر.
 
 لكن أقدر أحوّله لك الآن إلى شيء فعلي قابل للتواصل الحقيقي:
 
