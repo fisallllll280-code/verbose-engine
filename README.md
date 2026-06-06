@@ -1,6 +1,187 @@
 تمام، أوضحها لك بشكل أبسط وأقرب للواقع بدون تعقيد:
 تمام يا فيصل، خل نكتب لك VX Sovereign Runtime كـ كود واحد متصل فيه كل المكونات، وتقدر بعدين تفصله إلى ملفات حسب التعليقاتتمام، نروح لـ أبسط شكل حقيقي بدون تضخيم—هيكل VX نظيف تقدر تفصله لاحقًا لملفات.
 تمام، نروح لـ أبسط شكل حقيقي بدون تضخيم—هيكل VX نظيف تقدر تفصله لاحقًا لملفات.
+from dataclasses import dataclass, asdict
+from typing import Dict, Any, List, Callable
+import uuid
+import time
+import hashlib
+import copy
+import random
+
+# =========================================================
+# EVENT
+# =========================================================
+@dataclass
+class Event:
+    id: str
+    type: str
+    payload: Dict[str, Any]
+    ts: float
+
+# =========================================================
+# CHAIN LEDGER
+# =========================================================
+class Ledger:
+    def __init__(self):
+        self.chain: List[Dict[str, Any]] = []
+
+    def _hash(self, data: str) -> str:
+        return hashlib.sha256(data.encode()).hexdigest()
+
+    def commit(self, record: Dict[str, Any]):
+        prev_hash = self.chain[-1]["hash"] if self.chain else "GENESIS"
+        block_data = str(record) + prev_hash
+        block_hash = self._hash(block_data)
+        block = {
+            "hash": block_hash,
+            "prev": prev_hash,
+            "record": record,
+            "ts": time.time()
+        }
+        self.chain.append(block)
+        return block_hash
+
+# =========================================================
+# GLOBAL STATE
+# =========================================================
+class State:
+    def __init__(self):
+        self.data = {
+            "counter": 0,
+            "mode": "INIT"
+        }
+
+    def snapshot(self):
+        return copy.deepcopy(self.data)
+
+    def apply(self, patch: Dict[str, Any]):
+        self.data.update(patch)
+
+# =========================================================
+# POLICY ENGINE (PER CORE)
+# =========================================================
+class PolicyEngine:
+    def __init__(self, core_id: int):
+        self.core_id = core_id
+
+    def evaluate(self, event: Event, state: Dict[str, Any]) -> Dict[str, Any]:
+        # مثال بسيط: كل نواة لها سلوك مختلف شوي
+        if event.type.startswith("SYSTEM"):
+            return {"decision": "ALLOW", "confidence": 0.99}
+        if (state["counter"] + self.core_id) % 3 == 0:
+            return {"decision": "ALLOW", "confidence": 0.8}
+        if (state["counter"] + self.core_id) % 3 == 1:
+            return {"decision": "MODIFY", "confidence": 0.6}
+        return {"decision": "BLOCK", "confidence": 0.4}
+
+# =========================================================
+# EXECUTION ENGINE (PER CORE)
+# =========================================================
+class Executor:
+    def __init__(self, core_id: int):
+        self.core_id = core_id
+
+    def execute(self, decision: Dict[str, Any], event: Event):
+        if decision["decision"] == "ALLOW":
+            return {
+                "status": "EXECUTED",
+                "event": event.type,
+                "core": self.core_id
+            }
+        if decision["decision"] == "MODIFY":
+            return {
+                "status": "PATCHED",
+                "event": f"patched_{event.type}",
+                "core": self.core_id
+            }
+        return {
+            "status": "BLOCKED",
+            "event": event.type,
+            "core": self.core_id
+        }
+
+# =========================================================
+# VX CORE NODE (واحدة من 100 نواة)
+# =========================================================
+class VXCoreNode:
+    def __init__(self, core_id: int, ledger: Ledger, state: State):
+        self.core_id = core_id
+        self.ledger = ledger
+        self.state = state
+        self.policy = PolicyEngine(core_id)
+        self.executor = Executor(core_id)
+
+    def process(self, event: Event):
+        state_snapshot = self.state.snapshot()
+        decision = self.policy.evaluate(event, state_snapshot)
+        result = self.executor.execute(decision, event)
+
+        # تحديث حالة بسيطة
+        self.state.apply({
+            "counter": self.state.data["counter"] + 1
+        })
+
+        # تسجيل في الـ Ledger
+        self.ledger.commit({
+            "core_id": self.core_id,
+            "event": asdict(event),
+            "state": state_snapshot,
+            "decision": decision,
+            "result": result
+        })
+
+        return result
+
+# =========================================================
+# VX-100 MANAGER (يوزّع الأحداث على 100 نواة)
+# =========================================================
+class VX100:
+    def __init__(self, cores_count: int = 100):
+        self.ledger = Ledger()
+        self.state = State()
+        self.cores: List[VXCoreNode] = [
+            VXCoreNode(i, self.ledger, self.state)
+            for i in range(cores_count)
+        ]
+
+    def route_core(self, event: Event) -> VXCoreNode:
+        # توزيع بسيط: حسب hash نوع الحدث
+        idx = hash(event.type) % len(self.cores)
+        return self.cores[idx]
+
+    def emit(self, type: str, payload: Dict[str, Any]):
+        event = Event(
+            id=str(uuid.uuid4()),
+            type=type,
+            payload=payload,
+            ts=time.time()
+        )
+        core = self.route_core(event)
+        result = core.process(event)
+        return {
+            "core_id": core.core_id,
+            "result": result
+        }
+
+# =========================================================
+# DEMO
+# =========================================================
+if __name__ == "__main__":
+    vx100 = VX100(cores_count=100)
+
+    print("\n🔥 VX-100 REAL RUNTIME STARTED\n")
+
+    print(vx100.emit("SYSTEM_INIT", {"boot": True}))
+    print(vx100.emit("FILE_CREATE", {"name": "a.txt"}))
+    print(vx100.emit("FILE_MOVE", {"name": "b.txt"}))
+    print(vx100.emit("FILE_DELETE", {"name": "c.txt"}))
+    print(vx100.emit("USER_LOGIN", {"user": "faisal"}))
+    print(vx100.emit("USER_ACTION", {"action": "click"}))
+
+    print("\nLEDGER SIZE:", len(vx100.ledger.chain))
+    print("LAST BLOCK:", vx100.ledger.chain[-1])
+    print("\nFINAL STATE:", vx100.state.snapshot())
 
 # ============================================
 # vx_config.py
