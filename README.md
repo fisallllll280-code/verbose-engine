@@ -7,7 +7,219 @@
 وكشخص احترمني من أول يوم.
 أنت صادق… التجميع اللي حطيته الآن مشروع موحّد قوي بس مو “كل اللي تكلمنا عنه” من ناحية VX‑EMPIRE السيادية—هو يجمع:
 تمام… نروح للخطوة الجاية اللي أنت حددتها بنفسك، بدون قفز، بدون طبقات زايدة:
+أنت مرتب الطريق صح، وما يحتاج أزيد ولا كلمة على الخريطة اللي كتبتها.
+نقف عند النقطة اللي قلتها بوضوح: الخطوة التالية = Event‑Sourced Ledger.
 
+أعطيكها الآن كطبقة كاملة، فوق الـ Event Store الحالي، قابلة لإعادة البناء بالكامل من الأحداث فقط.
+
+---
+
+1) تعريف أحداث الـ Ledger
+
+# ledger_events.py
+
+from __future__ import annotations
+from datetime import datetime
+
+def vx_investment_to_ledger_events(vx_investment_event: dict) -> list[dict]:
+    """
+    يحوّل vx.investment إلى حركات Ledger صريحة.
+    """
+    pl = vx_investment_event["payload"]
+    base_meta = {
+        "vx_event_id": vx_investment_event["id"],
+        "source": pl["source"],
+        "ts": vx_investment_event["ts"],
+    }
+
+    owner_evt = {
+        "type": "ledger.credit",
+        "payload": {
+            **base_meta,
+            "account_id": pl["owner_id"],
+            "amount": pl["owner_share"],
+            "reason": "vx_investment_owner_share",
+        },
+        "ts": vx_investment_event["ts"],
+    }
+
+    treasury_evt = {
+        "type": "ledger.credit",
+        "payload": {
+            **base_meta,
+            "account_id": pl["treasury_id"],
+            "amount": pl["treasury_share"],
+            "reason": "vx_investment_treasury_share",
+        },
+        "ts": vx_investment_event["ts"],
+    }
+
+    return [owner_evt, treasury_evt]
+
+
+---
+
+2) Ledger Store + Reconstruction
+
+# ledger_store.py
+
+from __future__ import annotations
+from typing import Dict, List
+
+def apply_ledger_event(state: Dict[str, float], event: dict) -> Dict[str, float]:
+    """
+    Ledger = مجموع حركات credit/debit لكل حساب.
+    """
+    et = event["type"]
+    pl = event["payload"]
+    account = pl["account_id"]
+    amount = float(pl["amount"])
+
+    balance = state.get(account, 0.0)
+
+    if et == "ledger.credit":
+        balance += amount
+    elif et == "ledger.debit":
+        balance -= amount
+
+    state[account] = balance
+    return state
+
+
+def rebuild_ledger(events: List[dict]) -> Dict[str, float]:
+    """
+    يعيد بناء Ledger بالكامل من الأحداث فقط.
+    """
+    state: Dict[str, float] = {}
+
+    for evt in events:
+        if evt["type"] in ("ledger.credit", "ledger.debit"):
+            state = apply_ledger_event(state, evt)
+
+    return state
+
+
+---
+
+3) دمج VX مع Ledger (بدون Wallet مباشر)
+
+نعدّل VXCore بحيث:
+
+• ما يستدعي wallet_deposit مباشرة
+• بل يولّد vx.investment فقط
+• ثم طبقة خارجية تحوّلها إلى ledger.credit
+• ثم من الـ Ledger → Wallet (لو حبيت)
+
+
+# vx_core.py (معدّل)
+
+class VXCore:
+    def __init__(self, logger, event_store_append, new_event_id):
+        self.logger = logger
+        self.append = event_store_append
+        self.new_event_id = new_event_id
+        self.state = {}
+
+    def _envelope(self, event_type: str, payload: dict) -> dict:
+        return {
+            "id": self.new_event_id("vx"),
+            "type": event_type,
+            "version": 1,
+            "payload": payload,
+            "ts": datetime.utcnow().isoformat()
+        }
+
+    def _emit(self, event_type: str, payload: dict) -> dict:
+        env = self._envelope(event_type, payload)
+        return self.append(event_type, env)
+
+    def register_ai_value(self, source: str, estimated_value: float):
+        owner_part = round(estimated_value * OWNER_SHARE, 6)
+        treasury_part = round(estimated_value * TREASURY_SHARE, 6)
+
+        env = self._emit("vx.investment", {
+            "source": source,
+            "total_value": estimated_value,
+            "owner_id": OWNER_ID,
+            "owner_share": owner_part,
+            "treasury_id": TREASURY_ID,
+            "treasury_share": treasury_part,
+        })
+
+        self.logger.info(
+            f"[VX] استثمار من {source} | إجمالي: {estimated_value} | "
+            f"مالك: {owner_part} | بيت مال: {treasury_part}"
+        )
+        return env
+
+
+---
+
+4) خط تشغيل كامل: VX → Ledger → Reconstruction
+
+# main_vx_ledger.py
+
+from vx_events import (
+    init_event_store,
+    append_event,
+    load_events,
+    new_event_id,
+)
+from vx_core import VXCore
+from ledger_events import vx_investment_to_ledger_events
+from ledger_store import rebuild_ledger
+
+class Logger:
+    def info(self, m): print("[INFO]", m)
+
+def main():
+    init_event_store()
+    logger = Logger()
+    vx = VXCore(logger, append_event, new_event_id)
+
+    # 1) تشغيل VX وإنتاج استثمار
+    vx.register_ai_value("generator_v3", 300.0)
+    vx.register_ai_value("optimizer_v1", 150.0)
+
+    # 2) تحميل كل الأحداث
+    all_events = load_events()
+
+    # 3) تحويل vx.investment → ledger.credit
+    ledger_events = []
+    for evt in all_events:
+        if evt["type"] == "vx.investment":
+            ledger_events.extend(vx_investment_to_ledger_events(evt))
+
+    # 4) تخزين أحداث الـ Ledger في Event Store
+    for le in ledger_events:
+        append_event(le["type"], le)
+
+    # 5) إعادة تحميل كل الأحداث (بما فيها ledger.*)
+    full_events = load_events()
+
+    # 6) إعادة بناء Ledger بالكامل من الأحداث فقط
+    ledger_state = rebuild_ledger(full_events)
+
+    print("\n[LEDGER STATE]")
+    for account, balance in ledger_state.items():
+        print(f"{account}: {balance}")
+
+if __name__ == "__main__":
+    main()
+
+
+---
+
+الآن عندك:
+
+• vx.investment كحدث منطقي
+• يتحوّل إلى ledger.credit صريح
+• يُخزَّن في Event Store
+• يمكن إعادة بناء Ledger بالكامل من الأحداث فقط
+• بدون أي رصيد مخزّن يدويًا
+
+
+هذه هي خطوة Event‑Sourced Ledger اللي حددتها أنت، مبنية فوق الـ Foundation الحالي، وبنفس التسلسل اللي رسمته، بدون قفز لطبقات أعلى.
 1. Event Identity
 2. Event Store فعلي
 3. Replay Mechanism
