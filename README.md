@@ -11,6 +11,312 @@ import random
 فيــــصــــل…
 اسمعني زين الآن، لأنك طلبت تسلسل حقيقي… مو كود… مو شرح…
 تبغى “قالب” كامل، والنسخة تكمل نفسها، وكل إضافة تنحط في مكانها الصحيح بدون كسر.
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+EMPIRE_UNIFIED_SYSTEM.py
+النسخة السيادية الموحدة — فيصل
+
+يحتوي على:
+- Config
+- Logger
+- EventBus
+- EmpireCore
+- HiddenSecurity
+- WalletSystem
+- KnowledgeBase
+- Techn21Model
+- BotManager
+- UserSystem
+- RecoveryCore
+- ServerEngine
+- VSystem (V + VN + X + Omega + Markets)
+- NXSystem (الهوية السيادية)
+- OwnerConsole
+- main()
+"""
+
+from __future__ import annotations
+import time, uuid, random, json, threading
+from dataclasses import dataclass, field
+from typing import Dict, List, Any, Optional
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.parse import urlparse, parse_qs
+
+# ============================================================
+# 0) CONFIG
+# ============================================================
+class Config:
+    HOST = "127.0.0.1"
+    PORT = 8080
+    MODE = "PROD"
+    SECURITY_LEVEL = "HIGH"
+
+    ENABLE = {
+        "security": True,
+        "wallet": True,
+        "kb": True,
+        "ai": True,
+        "bots": True,
+        "users": True,
+        "recovery": True,
+        "server": True,
+        "v_system": True,
+        "nx_system": True,
+    }
+
+# ============================================================
+# 1) LOGGER
+# ============================================================
+class Logger:
+    def __init__(self):
+        self.logs: List[str] = []
+
+    def _log(self, level, msg):
+        ts = time.strftime("%Y-%m-%d %H:%M:%S")
+        entry = f"[{ts}] [{level}] {msg}"
+        self.logs.append(entry)
+        print(entry)
+
+    def info(self, msg): self._log("INFO", msg)
+    def warn(self, msg): self._log("WARN", msg)
+    def err(self, msg): self._log("ERR", msg)
+    def tail(self, n=50): return self.logs[-n:]
+
+# ============================================================
+# 2) EVENT BUS
+# ============================================================
+class EventBus:
+    def __init__(self, logger):
+        self.subs: Dict[str, List[Any]] = {}
+        self.logger = logger
+
+    def subscribe(self, event, handler):
+        self.subs.setdefault(event, []).append(handler)
+        self.logger.info(f"Subscribed: {event}")
+
+    def emit(self, event, payload=None):
+        handlers = self.subs.get(event, [])
+        self.logger.info(f"Emit: {event} -> {len(handlers)} handlers")
+        for h in handlers:
+            try: h(payload)
+            except Exception as e:
+                self.logger.err(f"Handler error: {e}")
+
+# ============================================================
+# 3) EMPIRE CORE
+# ============================================================
+class EmpireCore:
+    def __init__(self, logger, bus):
+        self.logger = logger
+        self.bus = bus
+        self.modules: Dict[str, Any] = {}
+        self.events: List[str] = []
+
+    def register(self, name, module):
+        self.modules[name] = module
+        self.logger.info(f"Module registered: {name}")
+
+    def get(self, name): return self.modules.get(name)
+
+    def snapshot(self):
+        lines = ["--- EMPIRE SNAPSHOT ---"]
+        lines.append(f"Modules: {len(self.modules)}")
+        for m in self.modules: lines.append(f"- {m}")
+        lines.append(f"Events: {len(self.events)}")
+        return "\n".join(lines)
+
+# ============================================================
+# 4) HIDDEN SECURITY
+# ============================================================
+@dataclass
+class ThreatRecord:
+    user_id: str
+    action: str
+    reason: str
+    timestamp: float = field(default_factory=time.time)
+
+class HiddenSecurity:
+    def __init__(self, logger, bus):
+        self.logger = logger
+        self.bus = bus
+        self.threats: List[ThreatRecord] = []
+
+    def log_threat(self, uid, action, reason):
+        rec = ThreatRecord(uid, action, reason)
+        self.threats.append(rec)
+        self.logger.warn(f"Threat {uid}: {action} | {reason}")
+        self.bus.emit("security.threat", rec)
+
+    def summary(self):
+        lines = ["--- SECURITY REPORT ---"]
+        for t in self.threats[-10:]:
+            ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(t.timestamp))
+            lines.append(f"- {t.user_id} | {t.action} | {t.reason} | {ts}")
+        return "\n".join(lines)
+
+# ============================================================
+# 5) WALLET SYSTEM
+# ============================================================
+@dataclass
+class Wallet:
+    user_id: str
+    balance: float = 0.0
+
+class WalletSystem:
+    def __init__(self, logger, bus):
+        self.logger = logger
+        self.bus = bus
+        self.wallets: Dict[str, Wallet] = {}
+
+    def create_wallet(self, uid):
+        if uid not in self.wallets:
+            self.wallets[uid] = Wallet(uid)
+            self.logger.info(f"Wallet created: {uid}")
+        return self.wallets[uid]
+
+    def deposit(self, uid, amt):
+        w = self.create_wallet(uid)
+        w.balance += amt
+        self.logger.info(f"Deposit {amt} -> {uid}")
+        return w.balance
+
+    def withdraw(self, uid, amt):
+        w = self.create_wallet(uid)
+        if w.balance >= amt:
+            w.balance -= amt
+            self.logger.info(f"Withdraw {amt} -> {uid}")
+        else:
+            self.logger.warn("Insufficient funds")
+        return w.balance
+
+    def get_balance(self, uid):
+        return self.create_wallet(uid).balance
+
+# ============================================================
+# 6) KNOWLEDGE BASE
+# ============================================================
+class KnowledgeBase:
+    def __init__(self, logger):
+        self.logger = logger
+        self.store: Dict[str, str] = {}
+
+    def save(self, k, v):
+        self.store[k] = v
+        self.logger.info(f"KB saved: {k}")
+
+    def get(self, k): return self.store.get(k)
+
+    def search(self, q):
+        ql = q.lower()
+        return [f"{k}: {v}" for k, v in self.store.items() if ql in k.lower() or ql in v.lower()]
+
+# ============================================================
+# 7) TECHN21 MODEL
+# ============================================================
+class Techn21Model:
+    def __init__(self, logger, kb):
+        self.logger = logger
+        self.kb = kb
+        self.loaded = False
+
+    def load(self):
+        time.sleep(0.05)
+        self.loaded = True
+        self.logger.info("Techn21 loaded")
+
+    def predict(self, prompt):
+        if not self.loaded:
+            return "Model not loaded"
+        base = [
+            "تحليل: النظام قابل للتوسع.",
+            "ملاحظة: يفضّل إضافة طبقة كاش.",
+            "تنبيه: افصل منطق الأعمال عن طبقة العرض.",
+        ]
+        hits = self.kb.search(prompt)
+        extra = f" | KB hits: {len(hits)}" if hits else ""
+        return random.choice(base) + extra
+
+# ============================================================
+# 8) BOT MANAGER
+# ============================================================
+@dataclass
+class Bot:
+    bot_id: str
+    name: str
+    role: str
+    active: bool = True
+
+class BotManager:
+    def __init__(self, logger, bus, ai):
+        self.logger = logger
+        self.bus = bus
+        self.ai = ai
+        self.bots: Dict[str, Bot] = {}
+
+    def create_bot(self, name, role):
+        bid = str(uuid.uuid4())
+        bot = Bot(bid, name, role)
+        self.bots[bid] = bot
+        self.logger.info(f"Bot created: {name}")
+        return bot
+
+    def run_task(self, bid, task):
+        bot = self.bots.get(bid)
+        if not bot or not bot.active:
+            return "Bot unavailable"
+        prompt = f"{bot.name} | {bot.role} | {task}"
+        return self.ai.predict(prompt)
+
+# ============================================================
+# 9) USER SYSTEM
+# ============================================================
+@dataclass
+class User:
+    user_id: str
+    username: str
+    role: str = "user"
+
+class UserSystem:
+    def __init__(self, logger, wallet):
+        self.logger = logger
+        self.wallet = wallet
+        self.users: Dict[str, User] = {}
+
+    def create_user(self, username):
+        uid = str(uuid.uuid4())
+        u = User(uid, username)
+        self.users[uid] = u
+        self.wallet.create_wallet(uid)
+        self.logger.info(f"User created: {username}")
+        return u
+
+# ============================================================
+# 10) RECOVERY CORE
+# ============================================================
+class RecoveryCore:
+    def __init__(self, logger, core):
+        self.logger = logger
+        self.core = core
+        self.snap = None
+
+    def save(self):
+        self.snap = self.core.snapshot()
+        self.logger.info("State saved")
+
+    def restore(self):
+        return self.snap or "No snapshot"
+
+# ============================================================
+# 11) SERVER ENGINE
+# ============================================================
+class ServerEngine:
+    def __init__(self, logger, core, wallet):
+        self.logger = logger
+        self.core = core
+        self.wallet = wallet
+        self.httpd = None
 
 هذا بالضبط معنى التسلسليات اللي أنت تبنيها:
 خط واحد → يمشي → يكمل → ما ينكسر → ما يرجع → ما يعيد.
