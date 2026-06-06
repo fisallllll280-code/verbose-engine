@@ -1,7 +1,161 @@
 تمام، أوضحها لك بشكل أبسط وأقرب للواقع بدون تعقيد:
 
 ⸻
+خريطة VX على Kubernetes
 
+مفهوم VX	في Kubernetes	دوره الأساسي	
+CORE	Deployment + Service	العقل المركزي واستقبال/إرسال الأوامر	
+Carrier 🚚	Job / Queue Worker Pod	تنفيذ المهام المنفصلة كحزم بيانات	
+R‑Node	Service Mesh / Ingress	توجيه الحركة بين الوحدات	
+E‑Node	Worker Deployment	عقد المعالجة الفعلية	
+T‑Node	Sidecar / Proxy Pod	تمرير فقط بدون منطق معقّد	
+الشبكة	Cluster Network + Mesh	مسارات الاتصال بين كل العناصر	
+
+
+---
+
+1) CORE = Deployment + Service
+
+• Deployment:
+يشغّل حاوية vx-core بعدد نسخ ثابتة (مثلاً 3 replicas).
+• Service:
+واجهة ثابتة داخل الكلاستر، كل الناقلين والـ Nodes يتكلمون معها.
+
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vx-core
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: vx-core
+  template:
+    metadata:
+      labels:
+        app: vx-core
+    spec:
+      containers:
+        - name: core
+          image: vx/core:latest
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vx-core-svc
+spec:
+  selector:
+    app: vx-core
+  ports:
+    - port: 8080
+      targetPort: 8080
+
+
+---
+
+2) Carriers 🚚 = Jobs / Queue Workers
+
+كل ناقل = Job أو رسالة في Queue يلتقطها Pod Worker:
+
+• Job يمثل مهمة واحدة كبيرة.
+• أو تستخدم Kafka/RabbitMQ، والـ Worker Pods تسحب الرسائل (الناقلين).
+
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: vx-carrier-job
+spec:
+  template:
+    spec:
+      containers:
+        - name: carrier
+          image: vx/carrier:latest
+      restartPolicy: Never
+
+
+---
+
+3) R‑Nodes = Service Mesh / Ingress / Gateway
+
+التوجيه في Kubernetes يكون عبر:
+
+• Ingress / API Gateway: يقرر الطلب يروح لأي خدمة.
+• Service Mesh (مثل Istio/Linkerd):
+يضيف منطق توجيه، موازنة، retries، مراقبة.
+
+
+هنا R‑Node = قواعد التوجيه داخل الـ Mesh.
+
+---
+
+4) E‑Nodes = Worker Deployments
+
+عقد المعالجة = Deployments متخصصة:
+
+• vx-exec-a
+• vx-exec-b
+
+
+كل واحدة تستقبل “Carrier” من الـ Queue أو من الـ CORE وتنفّذ.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vx-exec
+spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      app: vx-exec
+  template:
+    metadata:
+      labels:
+        app: vx-exec
+    spec:
+      containers:
+        - name: exec
+          image: vx/exec:latest
+
+
+---
+
+5) T‑Nodes = Sidecars / Proxies
+
+هذي حاويات خفيفة:
+
+• Sidecar جنب كل Pod:• Logging
+• Metrics
+• Simple forwarding
+
+• أو Proxy Pods تمرر الترافيك بدون منطق ثقيل.
+
+
+فكرتها: تمرير فقط، مثل ما وصفت في T‑Node.
+
+---
+
+6) الشبكة = Cluster + Mesh
+
+• Cluster Network (CNI) = الطرق الأساسية.
+• Service Mesh = الإشارات، القواعد، المراقبة.
+
+
+هنا يتحقق مفهومك:
+النظام مو طبقات… بل حركة شحنات (Requests / Jobs / Messages) داخل شبكة Kubernetes.
+
+---
+
+لو تبغى، أقدر أبني لك مانيفست كامل لـ:
+
+• vx-core
+• vx-grid
+• vx-link
+• vx-runtime
+
+
+كلها كـ Kubernetes objects جاهزة للـ apply.
 ⚡ VX — فكرة النواقل المتحركة (بشكل واضح)
 
 تخيّل النظام كأنه مدينة فيها طاقة تمشي في سيارات صغيرة:
