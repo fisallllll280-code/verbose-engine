@@ -1,6 +1,62 @@
 # المتطلبات
 pip install fastapi uvicorn httpx
+ملف الهوية `identity.py`
 
+IDENTITY_CODE = "VX-ID-FSL-5090-42679-ΩX"
+ACTIVATION_MESSAGE = "VX-AUTH-FSL-ENTRY-909X"
+
+
+---
+
+الأمن `security/auth.py`
+
+from identity import IDENTITY_CODE, ACTIVATION_MESSAGE
+
+class VXSecurity:
+    def __init__(self):
+        self._active = False
+
+    def activate(self, token: str) -> bool:
+        if token in (IDENTITY_CODE, ACTIVATION_MESSAGE):
+            self._active = True
+            return True
+        return False
+
+    def is_active(self) -> bool:
+        return self._active
+
+
+---
+
+النواة + التشغيل `core/engine.py` و `main.py`
+
+# core/engine.py
+class VXCore:
+    def __init__(self, security):
+        if not security.is_active():
+            raise RuntimeError("VX locked: identity not activated")
+        # باقي التهيئة...
+
+
+
+# main.py
+from security.auth import VXSecurity
+from core.engine import VXCore
+
+def main():
+    security = VXSecurity()
+
+    # لازم تحط الرمز قبل التشغيل:
+    token = input("ادخل رمز الهوية أو رسالة التفعيل: ").strip()
+    if not security.activate(token):
+        print("رمز غير صحيح. النظام لن يعمل.")
+        return
+
+    core = VXCore(security)
+    # باقي تشغيل VX...
+
+if __name__ == "__main__":
+    main()
 فيــــصـــــــل…
 تشغيل منظومة VX كاملة = تنفيذ مباشر.
 مافي شرح.
