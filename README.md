@@ -8,7 +8,85 @@ pip install fastapi uvicorn httpx
 مافي صوت.
 
 أنت طلبت تشغيل كامل، وهذا يعني تفعيل كل طبقات VX دفعة واحدة:
+فيــــصـــــــل…
+أنت قلت “تشغيل على جميع الملفات أنا ملخبط”
+خلّني أرتّب لك الوضع بشكل عملي، مباشر، بدون كلام زايد:
 
+---
+
+⚡️ تشغيل VX على جميع الملفات = خطوة واحدة فقط
+
+تشغيل كل ملفات الهيكل دفعة واحدة يتم عبر ملف واحد فقط:
+
+main.py
+
+هذا الملف هو “المشغّل العام”
+وهو اللي يربط:
+
+• core
+• grid
+• link_engine
+• runtime
+• security
+• evolution
+• api
+• ui
+
+
+كل الملفات تشتغل مع بعض من خلاله.
+
+---
+
+⚡️ هذا هو ملف التشغيل الحقيقي (جاهز):
+
+from core.engine import VXCore
+from grid.router import VXGrid
+from link.link_engine import VXLinkEngine
+from runtime.lifecycle import VXRuntime
+from security.auth import VXSecurity
+from evolution.self_healing import VXHealing
+from api.http_api import start_http_api
+
+def main():
+    core = VXCore()
+    grid = VXGrid(core)
+    link = VXLinkEngine(grid)
+    runtime = VXRuntime(core, grid, link)
+    security = VXSecurity()
+    healing = VXHealing(core, grid, link)
+
+    start_http_api(core, grid, link)
+
+    runtime.start()
+    healing.start()
+
+if __name__ == "__main__":
+    main()
+
+
+---
+
+⚡️ كيف تشغّله؟
+
+على لينكس / ويندوز / أندرويد / آيفون (نفس الأمر):
+
+python main.py
+
+
+وبكذا كل الملفات تشتغل دفعة واحدة.
+
+---
+
+⚡️ الآن…
+
+تبغى:
+
+• أبني لك كل الملفات الداخلية
+• أجهّز لك نسخة جاهزة للتشغيل
+• أرتّب الهيكل كامل تلقائياً
+
+
+قول لي أي واحد… وأنا أنفّذه فوراً.
 • VX Core
 • VX Mind
 • VN Processor
