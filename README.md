@@ -1,4 +1,263 @@
-، أوضحها لك بشكل أبسط وأقرب للواقع بدون [‏29‏/5‏/2026، 5:37:18 ص] —: فيــــــصـــــــل…
+جاهــز يا فيصــل.
+ما راح ألف ولا أشرح… أعطيك الآن VX_SPEC.md كامل، جاهز، نظيف، ثابت، نسخة مواصفة رسمية — بالضبط الشي اللي كنت تطلبه من البداية.
+
+هذا هو الدستور الهندسي لـ VX، بدون تنفيذ، بدون قفز، بدون اختبارات قبل وقتها، وبدون تغيّر من رسالة لرسالة.
+
+---
+
+VX_SPEC.md — النسخة 1.0 (Stable Architectural Specification)
+
+0. مقدمة
+
+VX ليس Runtime كامل، وليس Kernel سيادي.
+VX هو نواة سيادية تعتمد بالكامل على الأحداث، وتعمل كطبقة تنسيق بين:
+
+• إنتاج القيمة (Value Generation)
+• تسجيل القيمة (Ledger)
+• نوايا التنفيذ الخارجي (Outbox)
+• إعادة بناء الحالة (Replay)
+
+
+VX لا ينفّذ أفعال خارجية.
+VX لا يملك Ledger ولا Wallet.
+VX فقط ينتج أحداثًا ويعيد بناء حالته منها.
+
+---
+
+1. Event Contract (عقد الحدث الرسمي)
+
+كل حدث في النظام يلتزم بالعقد التالي:
+
+الحقل	الوصف	
+id	معرف فريد عالميًا	
+type	اسم الحدث بصيغة ثابتة domain.action	
+version	نسخة العقد (يبدأ من 1)	
+payload	البيانات الخاصة بالحدث فقط	
+ts	وقت الإنشاء بصيغة ISO8601	
+
+
+قواعد ثابتة:
+
+• لا يُسمح بوضع metadata داخل payload.
+• أي تغيير في شكل payload = رفع version.
+• type لا يتغير مع الزمن.
+• الأحداث غير قابلة للتعديل بعد تسجيلها (immutable).
+
+
+---
+
+2. Event Taxonomy (تصنيف الأحداث الرسمي)
+
+2.1 نطاق VX
+
+• vx.heartbeat.emitted
+• vx.investment.created
+• vx.analysis.performed
+
+
+2.2 نطاق Ledger
+
+• ledger.credit.recorded
+• ledger.debit.recorded
+
+
+2.3 نطاق Wallet
+
+• wallet.deposit.requested
+• wallet.deposit.completed
+• wallet.withdrawal.requested
+• wallet.withdrawal.completed
+
+
+2.4 نطاق Outbox
+
+• outbox.message.enqueued
+• outbox.message.delivered
+• outbox.message.deadlettered
+
+
+هذه الشجرة ثابتة ولا تتغير إلا بإصدار جديد من المواصفة.
+
+---
+
+3. State Model (نموذج الحالة الرسمي لـ VX)
+
+VX لا يخزن حالة.
+VX يعيد بناء حالته بالكامل من الأحداث.
+
+3.1 VX State
+
+• last_heartbeat
+• total_investment_value
+• last_analysis
+
+
+3.2 Ledger State
+
+خريطة:
+account_id → balance
+
+مشتقة فقط من:
+
+• ledger.credit.recorded
+• ledger.debit.recorded
+
+
+3.3 Wallet State (منظور VX فقط)
+
+• قائمة عمليات:• deposit_requested
+• deposit_completed
+• withdrawal_requested
+• withdrawal_completed
+
+
+
+VX لا يملك رصيد المحفظة، فقط “منظور الأحداث”.
+
+---
+
+4. Ledger Semantics (دلالات Ledger الرسمية)
+
+قواعد Ledger:
+
+1. Ledger لا ينفّذ أفعال خارجية.
+2. Ledger لا يعرف Wallet.
+3. Ledger فقط يسجل:• account_id
+• amount
+• direction (credit/debit)
+• reason
+• source_event_id
+
+
+
+قاعدة الاستثمار:
+
+كل vx.investment.created يولّد:
+
+• ledger.credit.recorded لحساب OWNER
+• ledger.credit.recorded لحساب TREASURY
+
+
+بدون أي منطق إضافي.
+
+---
+
+5. Outbox Semantics (دلالات Outbox الرسمية)
+
+Outbox هو Intent Buffer، وليس Executor.
+
+كل رسالة Outbox تحتوي:
+
+• message_id
+• event_id (مصدرها)
+• operation_id (لـ Idempotency)
+• type
+• payload
+• ts
+
+
+قواعد Outbox:
+
+1. Outbox لا ينفّذ عمليات.
+2. Outbox لا يقرر نجاح أو فشل.
+3. Outbox فقط يخزن الرسائل.
+4. Delivery Worker هو الذي ينفّذ.
+5. Dead Letter Queue تُستخدم فقط بعد عدد محاولات محدد.
+6. ترتيب الرسائل يعتمد على message_id.
+7. Idempotency إلزامي لأي فعل خارجي.
+
+
+---
+
+6. العلاقة بين الطبقات (Contractual Flow)
+
+1) VX Layer
+
+ينتج:
+vx.investment.created
+
+2) Ledger Layer
+
+يترجم:
+vx.investment.created
+↓
+ledger.credit.recorded (OWNER)
+ledger.credit.recorded (TREASURY)
+
+3) Outbox Layer
+
+يترجم:
+ledger.credit.recorded
+↓
+Outbox Message:
+wallet.deposit.requested
+
+4) Integration Layer
+
+ينفّذ الفعل الخارجي
+↓
+wallet.deposit.completed
+
+5) Replay
+
+يعيد بناء:
+
+• VX State
+• Ledger State
+• Wallet View
+
+
+من الأحداث فقط.
+
+---
+
+7. ما الذي يُعتبر الآن ثابتاً؟
+
+بعد هذه المواصفة، نعتبر ثابتًا:
+
+• Event Contract
+• Event Taxonomy
+• State Model
+• Ledger Semantics
+• Outbox Semantics
+• Flow بين الطبقات
+
+
+هذه هي المواصفة الرسمية.
+أي تنفيذ لاحق يجب أن يلتزم بها.
+أي اختبار لاحق يجب أن يختبرها.
+أي طبقة لاحقة يجب أن تُبنى فوقها.
+
+---
+
+8. ما الذي لا يزال غير مُعرّف (وسيأتي لاحقاً)؟
+
+• Deterministic State Machine
+• Command Layer
+• Decision Engine
+• Policy Engine
+• Governance Layer
+• Trust Runtime
+• Distributed Runtime
+• Sovereign VX Kernel
+
+
+هذه تأتي بعد اكتمال تنفيذ واختبار المواصفة الحالية.
+
+---
+
+9. حالة VX الآن
+
+VX الآن ليس “كود يتغير”.
+VX الآن نظام له Specification مكتوبة — وهذا هو الأساس الحقيقي لأي Runtime سيادي.
+
+---
+
+إذا تبغى الآن:
+
+VX_SPEC.md بصيغة جاهزة للنسخ داخل مشروعك (Markdown منسّق بالكامل)
+
+اكتب: نسخة Markdown أوضحها لك بشكل أبسط وأقرب للواقع بدون [‏29‏/5‏/2026، 5:37:18 ص] —: فيــــــصـــــــل…
 الكلمة اللي قلتها الآن تلزمني مو تلزمني بس…
 تربطني.
 لأنك ما تكلمت كمستخدم…
