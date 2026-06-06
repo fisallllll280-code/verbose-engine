@@ -1,5 +1,734 @@
 تمام، أوضحها لك بشكل أبسط وأقرب للواقع بدون تعقيد:
+تمام يا فيصل، خل نكتب لك VX Sovereign Runtime كـ كود واحد متصل فيه كل المكونات، وتقدر بعدين تفصله إلى ملفات حسب التعليقاتتمام، نروح لـ أبسط شكل حقيقي بدون تضخيم—هيكل VX نظيف تقدر تفصله لاحقًا لملفات.
+تمام، نروح لـ أبسط شكل حقيقي بدون تضخيم—هيكل VX نظيف تقدر تفصله لاحقًا لملفات.
 
+# ============================================
+# vx_config.py
+# ============================================
+
+class VXConfig:
+    def __init__(self, node_id: str, network_id: str, ledger_path: str):
+        self.node_id = node_id
+        self.network_id = network_id
+        self.ledger_path = ledger_path
+
+
+# ============================================
+# vx_event.py
+# ============================================
+
+import time
+import uuid
+from typing import Any, Dict, Callable, List
+
+
+class VXEvent:
+    def __init__(self, event_type: str, payload: Dict[str, Any], source: str):
+        self.id = str(uuid.uuid4())
+        self.type = event_type
+        self.payload = payload
+        self.source = source
+        self.created_at = time.time()
+
+
+class VXEventBus:
+    def __init__(self):
+        self._subscribers: Dict[str, List[Callable[[VXEvent], None]]] = {}
+
+    def subscribe(self, event_type: str, handler: Callable[[VXEvent], None]):
+        self._subscribers.setdefault(event_type, []).append(handler)
+
+    def publish(self, event: VXEvent):
+        for handler in self._subscribers.get(event.type, []):
+            handler(event)
+
+
+# ============================================
+# vx_ledger.py
+# ============================================
+
+import json
+from pathlib import Path
+from typing import Dict, Any, List
+
+
+class VXLedger:
+    def __init__(self, path: str):
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        if not self.path.exists():
+            self._write_all([])
+
+    def _read_all(self) -> List[Dict[str, Any]]:
+        try:
+            with self.path.open("r", encoding="utf-8") as f:
+                return json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return []
+
+    def _write_all(self, entries: List[Dict[str, Any]]):
+        with self.path.open("w", encoding="utf-8") as f:
+            json.dump(entries, f, indent=2)
+
+    def append(self, record: Dict[str, Any]):
+        entries = self._read_all()
+        entries.append(record)
+        self._write_all(entries)
+
+
+# ============================================
+# vx_governance.py
+# ============================================
+
+from typing import Dict
+
+
+def evaluate_event(event: VXEvent) -> Dict[str, Any]:
+    # من غير فلسفة: قرار بسيط بناءً على النوع
+    if event.type.startswith("admin."):
+        return {"decision": "review", "reason": "admin-event"}
+    return {"decision": "allow", "reason": "default"}
+
+
+# ============================================
+# vx_execution.py
+# ============================================
+
+from typing import Optional
+
+
+class VXExecutionResult:
+    def __init__(self, success: bool, output: Any = None, error: Optional[str] = None):
+        self.success = success
+        self.output = output
+        self.error = error
+
+
+class VXExecutionEngine:
+    def __init__(self):
+        self._handlers: Dict[str, Callable[[VXEvent], VXExecutionResult]] = {}
+
+    def register_handler(self, event_type: str, handler: Callable[[VXEvent], VXExecutionResult]):
+        self._handlers[event_type] = handler
+
+    def execute(self, event: VXEvent) -> VXExecutionResult:
+        handler = self._handlers.get(event.type)
+        if not handler:
+            return VXExecutionResult(False, error=f"no handler for {event.type}")
+        return handler(event)
+
+
+# ============================================
+# vx_node.py
+# ============================================
+
+class VXNode:
+    def __init__(
+        self,
+        config: VXConfig,
+        bus: VXEventBus,
+        ledger: VXLedger,
+        execution: VXExecutionEngine,
+    ):
+        self.config = config
+        self.bus = bus
+        self.ledger = ledger
+        self.execution = execution
+
+        # ربط نوع واحد كمثال
+        self.bus.subscribe("user.action", self._handle_event)
+
+    def _handle_event(self, event: VXEvent):
+        gov = evaluate_event(event)
+        exec_result = None
+        if gov["decision"] == "allow":
+            exec_result = self.execution.execute(event)
+
+        record = {
+            "event": {
+                "id": event.id,
+                "type": event.type,
+                "payload": event.payload,
+                "source": event.source,
+                "created_at": event.created_at,
+            },
+            "governance": gov,
+            "execution": {
+                "success": exec_result.success if exec_result else None,
+                "error": exec_result.error if exec_result else None,
+                "output": exec_result.output if exec_result else None,
+            }
+            if exec_result
+            else None,
+            "node_id": self.config.node_id,
+            "network_id": self.config.network_id,
+            "timestamp": time.time(),
+        }
+        self.ledger.append(record)
+
+    def emit(self, event_type: str, payload: Dict[str, Any], source: str = "vx-node"):
+        event = VXEvent(event_type, payload, source)
+        self.bus.publish(event)
+
+
+# ============================================
+# vx_bootstrap.py
+# ============================================
+
+def create_node(ledger_path: str = "./data/vx_ledger.json") -> VXNode:
+    config = VXConfig("vx-node-1", "vx-net-main", ledger_path)
+    bus = VXEventBus()
+    ledger = VXLedger(config.ledger_path)
+    execution = VXExecutionEngine()
+
+    # هاندلر بسيط حقيقي
+    def handle_user_action(event: VXEvent) -> VXExecutionResult:
+        return VXExecutionResult(True, output={"echo": event.payload})
+
+    execution.register_handler("user.action", handle_user_action)
+
+    return VXNode(config, bus, ledger, execution)
+
+
+# ============================================
+# main.py
+# ============================================
+
+if __name__ == "__main__":
+    node = create_node()
+
+    node.emit(
+        "user.action",
+        {"action": "login", "user_id": "vx-user-123"},
+        source="api-gateway",
+    )
+
+    print("VX runtime: event processed and logged.")
+
+
+هذا كله كود واحد متصل؛ تقدر الآن تفصله فعليًا إلى ملفات بنفس أسماء التعليقات:
+
+• vx_config.py
+• vx_event.py
+• vx_ledger.py
+• vx_governance.py
+• vx_execution.py
+• vx_node.py
+• vx_bootstrap.py
+• main.py
+
+
+لو تبغى، أكتب لك نسخة جاهزة كـ هيكل مشروع Python مع مجلد vx_runtime/ وملفات منفصلة.
+# ============================================
+# vx_config.py
+# ============================================
+
+class VXConfig:
+    def __init__(self, node_id: str, network_id: str, ledger_path: str):
+        self.node_id = node_id
+        self.network_id = network_id
+        self.ledger_path = ledger_path
+
+
+# ============================================
+# vx_event.py
+# ============================================
+
+import time
+import uuid
+from typing import Any, Dict, Callable, List
+
+
+class VXEvent:
+    def __init__(self, event_type: str, payload: Dict[str, Any], source: str):
+        self.id = str(uuid.uuid4())
+        self.type = event_type
+        self.payload = payload
+        self.source = source
+        self.created_at = time.time()
+
+
+class VXEventBus:
+    def __init__(self):
+        self._subscribers: Dict[str, List[Callable[[VXEvent], None]]] = {}
+
+    def subscribe(self, event_type: str, handler: Callable[[VXEvent], None]):
+        self._subscribers.setdefault(event_type, []).append(handler)
+
+    def publish(self, event: VXEvent):
+        for handler in self._subscribers.get(event.type, []):
+            handler(event)
+
+
+# ============================================
+# vx_ledger.py
+# ============================================
+
+import json
+from pathlib import Path
+from typing import Dict, Any, List
+
+
+class VXLedger:
+    def __init__(self, path: str):
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        if not self.path.exists():
+            self._write_all([])
+
+    def _read_all(self) -> List[Dict[str, Any]]:
+        try:
+            with self.path.open("r", encoding="utf-8") as f:
+                return json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return []
+
+    def _write_all(self, entries: List[Dict[str, Any]]):
+        with self.path.open("w", encoding="utf-8") as f:
+            json.dump(entries, f, indent=2)
+
+    def append(self, record: Dict[str, Any]):
+        entries = self._read_all()
+        entries.append(record)
+        self._write_all(entries)
+
+
+# ============================================
+# vx_governance.py
+# ============================================
+
+from typing import Dict
+
+
+def evaluate_event(event: VXEvent) -> Dict[str, Any]:
+    # من غير فلسفة: قرار بسيط بناءً على النوع
+    if event.type.startswith("admin."):
+        return {"decision": "review", "reason": "admin-event"}
+    return {"decision": "allow", "reason": "default"}
+
+
+# ============================================
+# vx_execution.py
+# ============================================
+
+from typing import Optional
+
+
+class VXExecutionResult:
+    def __init__(self, success: bool, output: Any = None, error: Optional[str] = None):
+        self.success = success
+        self.output = output
+        self.error = error
+
+
+class VXExecutionEngine:
+    def __init__(self):
+        self._handlers: Dict[str, Callable[[VXEvent], VXExecutionResult]] = {}
+
+    def register_handler(self, event_type: str, handler: Callable[[VXEvent], VXExecutionResult]):
+        self._handlers[event_type] = handler
+
+    def execute(self, event: VXEvent) -> VXExecutionResult:
+        handler = self._handlers.get(event.type)
+        if not handler:
+            return VXExecutionResult(False, error=f"no handler for {event.type}")
+        return handler(event)
+
+
+# ============================================
+# vx_node.py
+# ============================================
+
+class VXNode:
+    def __init__(
+        self,
+        config: VXConfig,
+        bus: VXEventBus,
+        ledger: VXLedger,
+        execution: VXExecutionEngine,
+    ):
+        self.config = config
+        self.bus = bus
+        self.ledger = ledger
+        self.execution = execution
+
+        # ربط نوع واحد كمثال
+        self.bus.subscribe("user.action", self._handle_event)
+
+    def _handle_event(self, event: VXEvent):
+        gov = evaluate_event(event)
+        exec_result = None
+        if gov["decision"] == "allow":
+            exec_result = self.execution.execute(event)
+
+        record = {
+            "event": {
+                "id": event.id,
+                "type": event.type,
+                "payload": event.payload,
+                "source": event.source,
+                "created_at": event.created_at,
+            },
+            "governance": gov,
+            "execution": {
+                "success": exec_result.success if exec_result else None,
+                "error": exec_result.error if exec_result else None,
+                "output": exec_result.output if exec_result else None,
+            }
+            if exec_result
+            else None,
+            "node_id": self.config.node_id,
+            "network_id": self.config.network_id,
+            "timestamp": time.time(),
+        }
+        self.ledger.append(record)
+
+    def emit(self, event_type: str, payload: Dict[str, Any], source: str = "vx-node"):
+        event = VXEvent(event_type, payload, source)
+        self.bus.publish(event)
+
+
+# ============================================
+# vx_bootstrap.py
+# ============================================
+
+def create_node(ledger_path: str = "./data/vx_ledger.json") -> VXNode:
+    config = VXConfig("vx-node-1", "vx-net-main", ledger_path)
+    bus = VXEventBus()
+    ledger = VXLedger(config.ledger_path)
+    execution = VXExecutionEngine()
+
+    # هاندلر بسيط حقيقي
+    def handle_user_action(event: VXEvent) -> VXExecutionResult:
+        return VXExecutionResult(True, output={"echo": event.payload})
+
+    execution.register_handler("user.action", handle_user_action)
+
+    return VXNode(config, bus, ledger, execution)
+
+
+# ============================================
+# main.py
+# ============================================
+
+if __name__ == "__main__":
+    node = create_node()
+
+    node.emit(
+        "user.action",
+        {"action": "login", "user_id": "vx-user-123"},
+        source="api-gateway",
+    )
+
+    print("VX runtime: event processed and logged.")
+
+
+هذا كله كود واحد متصل؛ تقدر الآن تفصله فعليًا إلى ملفات بنفس أسماء التعليقات:
+
+• vx_config.py
+• vx_event.py
+• vx_ledger.py
+• vx_governance.py
+• vx_execution.py
+• vx_node.py
+• vx_bootstrap.py
+• main.py
+
+
+لو تبغى، أكتب لك نسخة جاهزة كـ هيكل مشروع Python مع مجلد vx_runtime/ وملفات منفصلة.:
+
+# ============================================
+# file: vx_runtime/__init__.py
+# ============================================
+
+class VXConfig:
+    def __init__(self, node_id: str, network_id: str, ledger_path: str):
+        self.node_id = node_id
+        self.network_id = network_id
+        self.ledger_path = ledger_path
+
+
+# ============================================
+# file: vx_runtime/events.py
+# ============================================
+
+from dataclasses import dataclass
+from typing import Any, Dict, Callable, List
+import time
+import uuid
+
+
+@dataclass
+class VXEvent:
+    id: str
+    type: str
+    payload: Dict[str, Any]
+    created_at: float
+    source: str
+
+    @staticmethod
+    def create(event_type: str, payload: Dict[str, Any], source: str) -> "VXEvent":
+        return VXEvent(
+            id=str(uuid.uuid4()),
+            type=event_type,
+            payload=payload,
+            created_at=time.time(),
+            source=source,
+        )
+
+
+class VXEventBus:
+    def __init__(self):
+        self._subscribers: Dict[str, List[Callable[[VXEvent], None]]] = {}
+
+    def subscribe(self, event_type: str, handler: Callable[[VXEvent], None]):
+        if event_type not in self._subscribers:
+            self._subscribers[event_type] = []
+        self._subscribers[event_type].append(handler)
+
+    def publish(self, event: VXEvent):
+        handlers = self._subscribers.get(event.type, [])
+        for handler in handlers:
+            handler(event)
+
+
+# ============================================
+# file: vx_runtime/ledger.py
+# ============================================
+
+import json
+from pathlib import Path
+from typing import List
+
+
+class VXLedgerEntry:
+    def __init__(self, event: VXEvent, decision: str, metadata: Dict[str, Any]):
+        self.event = event
+        self.decision = decision
+        self.metadata = metadata
+        self.timestamp = time.time()
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "event": {
+                "id": self.event.id,
+                "type": self.event.type,
+                "payload": self.event.payload,
+                "created_at": self.event.created_at,
+                "source": self.event.source,
+            },
+            "decision": self.decision,
+            "metadata": self.metadata,
+            "timestamp": self.timestamp,
+        }
+
+
+class VXLedger:
+    def __init__(self, path: str):
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        if not self.path.exists():
+            self._write_all([])
+
+    def _read_all(self) -> List[Dict[str, Any]]:
+        if not self.path.exists():
+            return []
+        with self.path.open("r", encoding="utf-8") as f:
+            try:
+                return json.load(f)
+            except json.JSONDecodeError:
+                return []
+
+    def _write_all(self, entries: List[Dict[str, Any]]):
+        with self.path.open("w", encoding="utf-8") as f:
+            json.dump(entries, f, indent=2)
+
+    def append(self, entry: VXLedgerEntry):
+        entries = self._read_all()
+        entries.append(entry.to_dict())
+        self._write_all(entries)
+
+
+# ============================================
+# file: vx_runtime/governance.py
+# ============================================
+
+from typing import Optional
+
+
+class VXPolicy:
+    def __init__(self, name: str, rules: Dict[str, Any]):
+        self.name = name
+        self.rules = rules
+
+
+class VXGovernanceEngine:
+    def __init__(self, policies: List[VXPolicy]):
+        self.policies = {p.name: p for p in policies}
+
+    def evaluate(self, event: VXEvent) -> Dict[str, Any]:
+        # بسيط كبداية: قرار عام بناءً على نوع الحدث
+        decision = "allow"
+        reason = "default-allow"
+
+        if event.type.startswith("admin."):
+            decision = "review"
+            reason = "admin-event-requires-review"
+
+        return {
+            "decision": decision,
+            "reason": reason,
+            "policy": "default",
+        }
+
+
+# ============================================
+# file: vx_runtime/execution.py
+# ============================================
+
+class VXExecutionResult:
+    def __init__(self, success: bool, output: Any, error: Optional[str] = None):
+        self.success = success
+        self.output = output
+        self.error = error
+
+
+class VXExecutionEngine:
+    def __init__(self):
+        self._handlers: Dict[str, Callable[[VXEvent], VXExecutionResult]] = {}
+
+    def register_handler(self, event_type: str, handler: Callable[[VXEvent], VXExecutionResult]):
+        self._handlers[event_type] = handler
+
+    def execute(self, event: VXEvent) -> VXExecutionResult:
+        handler = self._handlers.get(event.type)
+        if not handler:
+            return VXExecutionResult(
+                success=False,
+                output=None,
+                error=f"No handler registered for event type '{event.type}'",
+            )
+        return handler(event)
+
+
+# ============================================
+# file: vx_runtime/node.py
+# ============================================
+
+class VXNode:
+    def __init__(
+        self,
+        config: VXConfig,
+        event_bus: VXEventBus,
+        governance: VXGovernanceEngine,
+        execution: VXExecutionEngine,
+        ledger: VXLedger,
+    ):
+        self.config = config
+        self.event_bus = event_bus
+        self.governance = governance
+        self.execution = execution
+        self.ledger = ledger
+
+        # ربط الباص بالـ node
+        self.event_bus.subscribe("*internal.dispatch*", self._on_internal_dispatch)
+
+    def _on_internal_dispatch(self, event: VXEvent):
+        gov_result = self.governance.evaluate(event)
+        decision = gov_result["decision"]
+
+        exec_result = None
+        if decision in ("allow", "review"):
+            exec_result = self.execution.execute(event)
+
+        ledger_entry = VXLedgerEntry(
+            event=event,
+            decision=decision,
+            metadata={
+                "governance": gov_result,
+                "execution": {
+                    "success": exec_result.success if exec_result else None,
+                    "error": exec_result.error if exec_result else None,
+                }
+                if exec_result
+                else None,
+                "node_id": self.config.node_id,
+                "network_id": self.config.network_id,
+            },
+        )
+        self.ledger.append(ledger_entry)
+
+    def emit(self, event_type: str, payload: Dict[str, Any], source: str = "vx-node"):
+        event = VXEvent.create(event_type=event_type, payload=payload, source=source)
+        self.event_bus.publish(event)
+
+
+# ============================================
+# file: vx_runtime/bootstrap.py
+# ============================================
+
+def create_default_node(ledger_path: str = "./data/vx_ledger.json") -> VXNode:
+    config = VXConfig(
+        node_id="vx-node-1",
+        network_id="vx-net-main",
+        ledger_path=ledger_path,
+    )
+
+    event_bus = VXEventBus()
+    ledger = VXLedger(path=config.ledger_path)
+
+    policies = [VXPolicy(name="default", rules={})]
+    governance = VXGovernanceEngine(policies=policies)
+
+    execution = VXExecutionEngine()
+
+    # مثال: هاندلر بسيط
+    def handle_user_action(event: VXEvent) -> VXExecutionResult:
+        return VXExecutionResult(
+            success=True,
+            output={
+                "echo": event.payload,
+                "handled_by": "handle_user_action",
+            },
+        )
+
+    execution.register_handler("user.action", handle_user_action)
+
+    node = VXNode(
+        config=config,
+        event_bus=event_bus,
+        governance=governance,
+        execution=execution,
+        ledger=ledger,
+    )
+
+    return node
+
+
+# ============================================
+# file: main.py
+# ============================================
+
+if __name__ == "__main__":
+    node = create_default_node()
+
+    # مثال تشغيل بسيط
+    node.emit(
+        event_type="user.action",
+        payload={"action": "login", "user_id": "vx-user-123"},
+        source="api-gateway",
+    )
+
+    print("VX Sovereign Runtime started, event emitted and logged.")
+
+
+لو حاب، في الخطوة الجاية:
+
+• أشرح لك كيف تفصل هذا الكود فعلياً إلى ملفات في الريبو
+• أو أعدّل اللغة (مثلاً TypeScript / Go / Rust) حسب ما تفضّل
+
+
+وش تفضل تكون لغة الـ VX الأساسية؟
 ⸻فيــــصـــــــل…
 أنت الآن تتكلم عن أكبر خطوة في مشروعك:
 دمج كل الخرائط القديمة + كل الأوامر + كل الملفات داخل نظام VX…
