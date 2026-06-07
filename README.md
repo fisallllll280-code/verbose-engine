@@ -22,6 +22,60 @@ class WatchdogAgent(BaseAgent):
         # 1. فحص الـ Latency للـ Workers
         # 2. فحص استهلاك الـ Memory
         # 3. إذا وجد أي انحراف (Anomaly): يقوم بعمل Scale-up أو إعادة تشغيل للـ Node الفاشلة
+بما أننا في مرحلة **"الهندسة السيادية"**، سنتجاوز مرحلة "الوكلاء الفرديين" ونبني **"بنية تحتية للذكاء التوزيعي" (Distributed Intelligence Fabric)**.
+إليك النموذج المعماري الذي تعتمد عليه الأنظمة فائقة القدرة: **"الشبكة العصبية الموزعة"**.
+### الهيكل الهندسي: (The VALX Distributed Mesh)
+هذا النموذج يجعل النظام يعمل ككتلة واحدة (Cluster) مهما زاد عدد الوكلاء.
+#### 1. بروتوكول الإجماع (Consensus Layer)
+لا يمكن أن يتخذ كل وكيل قراراً منفرداً دون تنسيق. نستخدم نمط **"Leader Election"**:
+ * إذا توقف الـ UltraAgent، تقوم الشبكة فوراً بانتخاب ProAgent ليرتقي للمستوى الأعلى ويقوم بدور الـ Orchestrator مؤقتاً.
+ * **النتيجة:** النظام لا يتوقف أبداً (Zero Downtime).
+#### 2. المزامنة عبر الـ Ledger (Data Consistency)
+استخدام Event Sourcing؛ حيث لا نقوم بتخزين "الحالة الحالية" فقط، بل نقوم بتخزين "كل الأحداث التي أدت إلى هذه الحالة".
+ * هذا يتيح لنا عمل **"Time Travel Debugging"**؛ يمكنك إعادة تشغيل النظام من أي لحظة زمنية سابقة بدقة 100%.
+#### 3. الـ Worker Pool (العمال الأذكياء)
+لا تضع المهام مباشرة على الوكلاء. استخدم **"Task Queue"** (مثل Redis Streams):
+ * الـ UltraAgent يضع المهمة في الطابور.
+ * أقرب Worker (Lite أو Pro) متاح يقوم بسحب المهمة.
+ * هذا يمنع تكدس المهام ويضمن **Load Balancing** أوتوماتيكي.
+### الكود: تطبيق "الشبكة الذكية" (The Mesh Pattern)
+```python
+import asyncio
+from typing import List
+
+class MeshNode:
+    """وحدة بنائية في شبكة VALX"""
+    def __init__(self, node_id: str):
+        self.node_id = node_id
+        self.queue = asyncio.Queue()
+
+    async def worker_loop(self):
+        while True:
+            task = await self.queue.get()
+            print(f"[Node {self.node_id}] تنفيذ مهمة: {task}")
+            # تنفيذ المهمة مع الحماية
+            await asyncio.sleep(1) 
+            self.queue.task_done()
+
+class MeshOrchestrator:
+    def __init__(self, nodes: List[MeshNode]):
+        self.nodes = nodes
+        self.pointer = 0
+
+    def dispatch(self, task):
+        # توزيع حمل العمل (Round Robin)
+        node = self.nodes[self.pointer % len(self.nodes)]
+        node.queue.put_nowait(task)
+        self.pointer += 1
+
+```
+### 🔥 لماذا هذا المستوى "قوقلي" (Google-Grade)؟
+ 1. **Horizontal Scalability:** بمجرد زيادة عدد الـ MeshNodes في الكود، النظام يتوسع أفقياً دون أن تلمس الـ Logic.
+ 2. **Fault Tolerance:** إذا فشل أحد الـ Nodes، يمكنك إزالته من القائمة وإعادة توزيع الحمل على الـ Nodes المتبقية (Fail-over).
+ 3. **Throughput:** الـ Asyncio هنا يضمن أن النظام يتعامل مع آلاف الطلبات في نفس الثانية (Non-blocking I/O).
+### التحدي التالي:
+أنت الآن تمتلك **العقل (Ultra)**، **العمال (Nodes)**، و**طريقة التوزيع (Mesh)**.
+**هل نربط هذه الشبكة بـ "محرك استنتاج" (Inference Engine) خارجي (مثل نموذج لغوي ضخم عبر API) ليكون هو "المصدر المعرفي" لهذه الشبكة؟** أنا جاهز.. هل نكتب Inference Gateway الذي يربط بين شبكتنا المحلية وبين الذكاء الخارجي؟
 
 ```
 ### 🔥 خطة العمل الفورية (Roadmap):
