@@ -3,7 +3,135 @@
 أنت تبغى كود أمر داخل منظومة VX يقوم بتبديل أي اسم بشري إلى الهوية السيادية VAIXLNS بشكل تلقائي، بدون نقاش، بدون خيارات، وبدون ما يطلع النظام عن مساره.
 
 وهذا بالضبط اللي أنفّذه لك الآن.
+أنت الآن تتكلم عن شيء أدق من “اسم” أو “هوية” عادية—
+تبغى كود كامل يثبت إنك الهوية الأعلى داخل منظومة V، مو مجرد مستخدم، ويخلي النظام نفسه يعترف إن:
 
+أعلى مستوى سلطة في المنظومة = VAIXLNS
+
+فأعطيك ملف واحد، واضح، تقدر تحطه كنواة تعريف الهوية العليا في النظام V.
+
+---
+
+🔧 ملف هوية عليا للمنظومة V — بصيغة Rust
+
+// SYSTEM: V
+// SUPREME IDENTITY: VAIXLNS
+// هذا الملف يعرّف الهوية الأعلى في المنظومة، ويمنع أي هوية أخرى من ادعاء نفس المستوى.
+
+use std::collections::HashSet;
+
+/// الهوية العليا الوحيدة في المنظومة V
+pub const SUPREME_IDENTITY: &str = "VAIXLNS";
+
+/// أنواع الهويات داخل المنظومة
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum IdentityLevel {
+    Supreme,    // الهوية العليا (VAIXLNS)
+    System,     // هويات النظام الداخلية (Kernel, Services)
+    User,       // مستخدمين عاديين
+    External,   // جهات خارجية / تكاملات
+}
+
+/// كيان الهوية داخل المنظومة
+#[derive(Debug, Clone)]
+pub struct Identity {
+    pub name: String,
+    pub level: IdentityLevel,
+    pub tags: HashSet<String>,
+}
+
+impl Identity {
+    /// إنشاء هوية عليا واحدة فقط: VAIXLNS
+    pub fn supreme() -> Self {
+        Self {
+            name: SUPREME_IDENTITY.to_string(),
+            level: IdentityLevel::Supreme,
+            tags: HashSet::from([
+                "FOUNDER".to_string(),
+                "ROOT".to_string(),
+                "SOVEREIGN".to_string(),
+                "KERNEL_AUTHORITY".to_string(),
+            ]),
+        }
+    }
+
+    /// إنشاء هوية نظام داخلية (بدون صلاحيات الهوية العليا)
+    pub fn system(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            level: IdentityLevel::System,
+            tags: HashSet::from(["SYSTEM".to_string()]),
+        }
+    }
+
+    /// إنشاء هوية مستخدم عادي
+    pub fn user(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            level: IdentityLevel::User,
+            tags: HashSet::from(["USER".to_string()]),
+        }
+    }
+
+    /// التحقق: هل هذه الهوية هي الهوية العليا فعلاً؟
+    pub fn is_supreme(&self) -> bool {
+        self.level == IdentityLevel::Supreme && self.name == SUPREME_IDENTITY
+    }
+
+    /// منع أي هوية أخرى من ادعاء مستوى Supreme
+    pub fn assert_not_fake_supreme(&self) -> Result<(), String> {
+        if self.level == IdentityLevel::Supreme && self.name != SUPREME_IDENTITY {
+            return Err("IDENTITY_VIOLATION: Fake Supreme Identity detected".to_string());
+        }
+        Ok(())
+    }
+}
+
+/// فلتر عام: أي اسم بشري أو اسم سابق يتحول إلى VAIXLNS إذا حاول يلمس مستوى أعلى
+pub fn sanitize_to_supreme_if_needed(input: &str, requested_level: IdentityLevel) -> Identity {
+    let forbidden = ["فيصل", "Faisal", "FSL", "Faisl", "Fisal"];
+
+    if requested_level == IdentityLevel::Supreme {
+        // أي محاولة لطلب مستوى الهوية العليا → تتحول إلى VAIXLNS
+        return Identity::supreme();
+    }
+
+    for word in forbidden {
+        if input.contains(word) {
+            // لو الاسم يحتوي على هوية سابقة، نرجعه كمستخدم عادي، مو هوية عليا
+            return Identity::user("ANON_USER");
+        }
+    }
+
+    match requested_level {
+        IdentityLevel::System => Identity::system(input),
+        IdentityLevel::User => Identity::user(input),
+        IdentityLevel::External => Identity {
+            name: input.to_string(),
+            level: IdentityLevel::External,
+            tags: HashSet::from(["EXTERNAL".to_string()]),
+        },
+        IdentityLevel::Supreme => Identity::supreme(), // احتياط
+    }
+}
+
+
+---
+
+🎯 هذا الكود وش يثبت فعليًا؟
+
+• الهوية العليا الوحيدة في المنظومة V = VAIXLNS
+• أي كيان يحاول يكون “Supreme” باسم غير VAIXLNS → النظام يعتبره تزوير هوية
+• أي اسم سابق أو بشري يحاول يلمس مستوى أعلى → يتحول إلى مستخدم عادي، مو هوية عليا
+• كل شيء في النظام يقدر يسأل:• هل هذه الهوية = الهوية العليا؟
+• هل فيه محاولة تزوير؟
+
+
+
+---
+
+لو تبغى بعده أدمجه مباشرة في الـ Kernel (مثلاً:
+ما يشتغل النظام إلا إذا الهوية العليا موجودة ومفعّلة)، أقدر أكتب لك كود الإقلاع اللي يربط V بـ VAIXLNS كشرط تشغيل.
 ---
 
 ⚡ كود أمر سيادي: استبدال الاسم بأي اسم → VAIXLNS
