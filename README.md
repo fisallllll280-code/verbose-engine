@@ -1,3 +1,66 @@
+نقبله ونبدأ العمل فوراً. هكذا يُبنى النظام الحقيقي: **فحص، سجل، تعافي، استمرارية.**
+إليك التحديث الجوهري لـ VANX ليتحول من "موزع بدائي" إلى "نظام مرن" (Resilient System). أضفتُ **عداد محاولات للتعافي** و **سجل أحداث (Logger)** متكامل.
+### ⚡ VANX: Resilient Load Balancer (النسخة المطورة)
+```python
+import random
+import time
+
+class VANX_ResilientBalancer:
+    def __init__(self, nodes):
+        self.nodes = nodes  # {name: weight}
+        self.health_status = {node: True for node in nodes}
+        self.recovery_counter = {node: 0 for node in nodes}
+        self.log = []
+
+    def log_event(self, message):
+        timestamp = time.strftime("%H:%M:%S")
+        entry = f"[{timestamp}] {message}"
+        self.log.append(entry)
+        print(entry)
+
+    def health_check(self):
+        for node in self.nodes:
+            # إذا كانت العقدة ميتة، حاول إحياءها
+            if not self.health_status[node]:
+                self.recovery_counter[node] += 1
+                if self.recovery_counter[node] >= 3:
+                    self.health_status[node] = True
+                    self.recovery_counter[node] = 0
+                    self.log_event(f"🔄 Node {node} Recovered!")
+            else:
+                # محاكاة فشل بنسبة 20%
+                if random.random() < 0.2:
+                    self.health_status[node] = False
+                    self.log_event(f"❌ Node {node} Failed!")
+
+    def get_next_node(self):
+        healthy_nodes = [n for n, status in self.health_status.items() if status]
+        if not healthy_nodes:
+            self.log_event("⚠️ CRITICAL: All nodes down!")
+            return None
+            
+        selected = random.choices(healthy_nodes, weights=[self.nodes[n] for n in healthy_nodes], k=1)[0]
+        self.log_event(f"✅ Task assigned to: {selected}")
+        return selected
+
+# تنفيذ الاختبار
+nodes_config = {"Node_V": 3, "Node_A": 5, "Node_N": 2}
+vanx = VANX_ResilientBalancer(nodes_config)
+
+# دورة حياة النظام (10 خطوات)
+for step in range(10):
+    vanx.health_check()
+    vanx.get_next_node()
+    time.sleep(0.5)
+
+```
+### ⚡ ماذا فعلنا هنا؟
+ 1. **التعافي التلقائي (Self-Healing):** العقدة التي تفشل لا تخرج من الشبكة للأبد؛ الـ recovery_counter يمنحها 3 فرص للعودة.
+ 2. **التتبع (Logger):** الآن نعرف بالضبط متى سقطت العقدة ومتى نهضت، مما يعطينا "الرؤية السيادية" لحالة النظام.
+ 3. **المرونة (Resilience):** النظام لا ينهار حتى لو فشلت جميع العقد مؤقتاً، بل يرسل تحذيراً (Critical) في السجل.
+هذا الكود الآن **يُعتمد عليه**. إذا كنت ترى أن هذا كافٍ كبداية قوية، فأنا جاهز للخطوة التالية. هل ننتقل لربط هذا الموزع بـ **قاعدة بيانات سيادية (Ledger Persistence)** ليحفظ حالة العقد حتى لو انطفأ السكريبت؟
+**أنت صاحب القرار، كيف نطور "الجلد" القادم؟**
+
 هذا هو **كود الحياة (The Life Code)** لـ **VANX**، المحرك السيادي الذي يغذي **VX**.
 المنطق هنا ليس مجرد أوامر، بل **حلقة تغذية راجعة مستمرة (Self-Sustaining Feedback Loop)**: الـ **V** (التحقق)، والـ **A** (التكييف الذاتي)، والـ **N** (الشبكة)، مترابطة في خوارزمية واحدة لا تتقاطع إلا لتتطور.
 ### ⚡ VANX: The Life Code (Core Engine)
