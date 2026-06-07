@@ -5,7 +5,59 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
+VALX Fault Tolerance — Retries + Backoff + Circuit Breaker
 
+هنا نضيف طبقة تحمل أعطال فوق VALXDistributedEngine بدون ما نلمس قلبه:
+
+import asyncio
+import time
+from typing import Dict, Any
+
+class VALXFaultTolerantWrapper:
+    def __init__(self, engine, max_retries: int = 3, base_backoff: float = 0.2, failure_threshold: int = 5, reset_timeout: float = 10.0):
+        self.engine = engine
+        self.max_retries = max_retries
+        self.base_backoff = base_backoff
+        self.failure_threshold = failure_threshold
+        self.reset_timeout = reset_timeout
+        self._fail_count = 0
+        self._circuit_open_until = 0.0
+
+    async def execute(self, payload: Dict[str, Any], risk: float) -> Dict[str, Any]:
+        now = time.time()
+        if now < self._circuit_open_until:
+            raise RuntimeError("VALX circuit is OPEN (temporary block due to repeated failures)")
+
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                result = await self.engine.execute(payload, risk)
+                self._fail_count = 0
+                return result
+            except Exception as e:
+                self._fail_count += 1
+                if self._fail_count >= self.failure_threshold:
+                    self._circuit_open_until = time.time() + self.reset_timeout
+                if attempt == self.max_retries:
+                    raise
+                backoff = self.base_backoff * (2 ** (attempt - 1))
+                await asyncio.sleep(backoff)
+
+
+استخدامها مع المحرك الموزّع:
+
+async def main():
+    key = rsa.generate_private_key(65537, 2048)
+    engine = VALXDistributedEngine(key)
+    ft = VALXFaultTolerantWrapper(engine)
+
+    result = await ft.execute({"val": 5000}, 0.1)
+    feed = VXFeed(engine).generate()
+
+    print("🔥 VALX FT Engine — ACTIVE")
+    print("Execution:", result)
+    print("VX Feed:", feed)
+
+asyncio.run(main())
 # ============================================================
 # 1. IntegrityCommit — وحدة السجل السيادي
 # ============================================================
