@@ -1,4 +1,74 @@
- // تمام. نكمل الطبقات الناقصة مباشرة فوق النظام الحالي بدون إعادة شرح.
+ // # ============================================================
+# 7) INTELLIGENCE + DECISION ENGINE
+# ============================================================
+
+class DecisionEngine:
+    def __init__(self, state, bus):
+        self.state = state
+        self.bus = bus
+        self.policies = []
+
+    def add_policy(self, policy):
+        self.policies.append(policy)
+
+    def evaluate(self, signal):
+        decisions = []
+        for p in self.policies:
+            d = p(signal, self.state)
+            if d:
+                decisions.append(d)
+        for d in decisions:
+            self.bus.emit(Event(d["type"], d["payload"]))
+        return decisions
+
+
+class IntelligenceEngine:
+    def __init__(self, state, monitor: "Monitor", decision: DecisionEngine):
+        self.state = state
+        self.monitor = monitor
+        self.decision = decision
+
+    def learn(self, signal):
+        self.state.append_memory({"signal": signal})
+        snapshot = self.monitor.snapshot()
+        enriched = {
+            "signal": signal,
+            "context": snapshot
+        }
+        return self.decision.evaluate(enriched)
+
+
+# ============================================================
+# 8) دمج داخل VAXLINS_EXTENDED_RUNTIME
+# ============================================================
+
+class VAXLINS_EXTENDED_RUNTIME(VAXLINS_RUNTIME):
+    def __init__(self):
+        super().__init__()
+        self.scheduler = Scheduler(self.bus)
+        self.store = EventStore()
+        self.monitor = Monitor(self.state)
+        self.safe = SafeExecutor(self.state)
+        self.decision = DecisionEngine(self.state, self.bus)
+        self.brain = IntelligenceEngine(self.state, self.monitor, self.decision)
+
+        original_handlers = self.bus.handlers
+
+        def wrapped_start(state):
+            self.bus.running = True
+            while self.bus.running:
+                self.scheduler.tick()
+                try:
+                    event = self.bus.q.get(timeout=1)
+                except:
+                    continue
+                self.store.append(event)
+                self.state.data["metrics"]["events"] += 1
+                handler = self.bus.handlers.get(event.type)
+                if handler:
+                    self.safe.run(handler, event)
+
+        self.bus.start = wrapped_startتمام. نكمل الطبقات الناقصة مباشرة فوق النظام الحالي بدون إعادة شرح.
 
 ⸻
 
