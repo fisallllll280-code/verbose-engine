@@ -5,7 +5,181 @@
 طلبت: كود واحد يجمع كل ما في الجلسة — بدون نقص.
 
 هذا ملف واحد موحّد يلخّص كل ما بنيناه مفهوميًا في الجلسة، بشكل هندسي مباشر:
+يا فيصل… كلامك هذا هندسي بحت و100% على مزاجك:
+ربط الانهيار بتعويض مالي تلقائي = مسؤولية مكتوبة في الكود، مو في البروشور.
 
+نمشي خطوة عملية ونضيف شيئين واضحين:
+
+1. صندوق الضمان السيادي داخل الـ Kernel
+2. مسار API: /insurance/status يعرض حالة المليون قدام أي عميل
+
+
+1️⃣ توسيع الـ Kernel بصندوق الضمان + حالة التشغيل
+
+use std::collections::HashMap;
+
+pub struct SovereignKernel {
+    pub ledger: HashMap<String, u64>,
+    pub insurance_pool: u64, // صندوق الضمان (مثلاً: 1,000,000 VX)
+    pub is_operational: bool,
+}
+
+impl SovereignKernel {
+    pub fn new() -> Self {
+        let mut ledger = HashMap::new();
+        // نحجز المليون في حساب خاص بالضمان
+        ledger.insert("INSURANCE_POOL".to_string(), 1_000_000);
+
+        Self {
+            ledger,
+            insurance_pool: 1_000_000,
+            is_operational: true,
+        }
+    }
+
+    pub fn process_event(&mut self, event: Event) -> Result<(), String> {
+        if !self.is_operational {
+            return Err("KERNEL_NOT_OPERATIONAL".to_string());
+        }
+
+        match event {
+            Event::Transfer { from, to, amount } => {
+                let sender_balance = self.ledger.get(&from).unwrap_or(&0);
+                if *sender_balance < amount {
+                    return Err("VIOLATION: Zero-Overdraft Policy".to_string());
+                }
+
+                self.ledger.insert(from.clone(), sender_balance - amount);
+                let receiver_balance = self.ledger.get(&to).unwrap_or(&0);
+                self.ledger.insert(to.clone(), receiver_balance + amount);
+
+                Ok(())
+            }
+            Event::Mint { amount, auditor } => {
+                if auditor != "COUNCIL_ROOT" {
+                    return Err("VIOLATION: Unauthorized Minting Attempt".to_string());
+                }
+                let current = self.ledger.get("TREASURY").unwrap_or(&0);
+                self.ledger.insert("TREASURY".to_string(), current + amount);
+                Ok(())
+            }
+        }
+    }
+
+    pub fn trigger_failure_compensation(&mut self) -> u64 {
+        self.is_operational = false;
+        let payout = self.insurance_pool;
+        self.insurance_pool = 0;
+        // نفرغ حساب الضمان في الـ Ledger أيضاً
+        self.ledger.insert("INSURANCE_POOL".to_string(), 0);
+        payout
+    }
+}
+
+
+2️⃣ إضافة `/insurance/status` في الـ API
+
+نفترض أنك تستخدم axum وAppState فيه kernel: Arc<Mutex<SovereignKernel>>.
+
+هياكل الـ API:
+
+use serde::{Serialize, Deserialize};
+
+#[derive(Serialize)]
+struct InsuranceStatusResponse {
+    operational: bool,
+    insurance_pool: u64,
+    ledger_value: u64,
+}
+
+
+مسار `/insurance/status`:
+
+use axum::{Json, extract::State};
+
+async fn insurance_status_handler(
+    State(state): State<AppState>,
+) -> Json<InsuranceStatusResponse> {
+    let kernel = state.kernel.lock().unwrap();
+
+    let ledger_value = kernel
+        .ledger
+        .get("INSURANCE_POOL")
+        .cloned()
+        .unwrap_or(0);
+
+    Json(InsuranceStatusResponse {
+        operational: kernel.is_operational,
+        insurance_pool: kernel.insurance_pool,
+        ledger_value,
+    })
+}
+
+
+ربطه في الـ Router:
+
+let app = Router::new()
+    .route("/transfer", post(transfer_handler))
+    .route("/insurance/status", get(insurance_status_handler))
+    .with_state(state);
+
+
+3️⃣ درع الـ Panic حول التحويل (Circuit Breaker فعلي)
+
+#[derive(Serialize)]
+struct ApiResponse {
+    success: bool,
+    message: String,
+    compensation: Option<u64>,
+}
+
+async fn transfer_handler(
+    State(state): State<AppState>,
+    Json(req): Json<TransferRequest>,
+) -> Json<ApiResponse> {
+    let mut kernel = state.kernel.lock().unwrap();
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        kernel.process_event(Event::Transfer {
+            from: req.from.clone(),
+            to: req.to.clone(),
+            amount: req.amount,
+        })
+    }));
+
+    match result {
+        Ok(Ok(_)) => Json(ApiResponse {
+            success: true,
+            message: "Transfer processed.".to_string(),
+            compensation: None,
+        }),
+        Ok(Err(e)) => Json(ApiResponse {
+            success: false,
+            message: e,
+            compensation: None,
+        }),
+        Err(_) => {
+            let payout = kernel.trigger_failure_compensation();
+            Json(ApiResponse {
+                success: false,
+                message: "KERNEL_CRASH: Compensation triggered.".to_string(),
+                compensation: Some(payout),
+            })
+        }
+    }
+}
+
+
+---
+
+لو تبغى الجلد اللي بعده يكون:
+
+• توزيع تعويض المليون على قائمة متضررين
+• أو ربط الـ Insurance Pool بعقد خارجي
+• أو إضافة /crash/test endpoint يختبر الـ Circuit Breaker
+
+
+قل الأمر نصًا… وأنا أكتب لك الكود مباشرة.
 • Runtime (الدستور)
 • Identity (المواطنة)
 • VX‑Coin (العملة)
