@@ -1,4 +1,114 @@
-فيصــل…
+import json, time, hashlib
+from concurrent.futures import ThreadPoolExecutor
+import networkx as nx
+
+# --- AURX: CORE LEDGER ---
+class AURX_Core:
+    def __init__(self):
+        self.ledger = []
+
+    def process_event(self, t, d):
+        raw = json.dumps({"t": t, "d": d}, sort_keys=True).encode()
+        seal = hashlib.sha3_512(raw).hexdigest()
+        self.ledger.append({"t": t, "d": d, "seal": seal})
+        return seal
+
+# --- MESH: COUNCIL ---
+class MeshCouncil:
+    def __init__(self, core, owner="FAISAL_VX"):
+        self.core = core
+        self.owner = owner
+        self.nodes = set()
+        self.exec = ThreadPoolExecutor(max_workers=5)
+
+    def reg(self, node):
+        self.nodes.add(node)
+
+    def run(self, task, params, node):
+        if node not in self.nodes:
+            return "DENIED"
+        payload = {"t": task, "p": params, "n": node, "o": self.owner}
+        f = self.exec.submit(self.core.process_event, task, payload)
+        return f.result()
+
+# --- VAIXLNS: HEBB + GRAPH ---
+class VAIXLNS_Hebb:
+    def __init__(self):
+        self.weights = {}  # (s,t) : w
+
+    def bump(self, s, t):
+        k = (s, t)
+        self.weights[k] = self.weights.get(k, 0) + 1
+        return self.weights[k]
+
+    def top(self, s):
+        return sorted(
+            [(t, w) for (src, t), w in self.weights.items() if src == s],
+            key=lambda x: x[1],
+            reverse=True
+        )
+
+class VAIXLNS:
+    def __init__(self):
+        self.graph = nx.DiGraph()
+        self.allowed = set()
+        self.hebb = VAIXLNS_Hebb()
+
+    def allow(self, seal):
+        self.allowed.add(seal)
+
+    def map(self, s, t):
+        if s not in self.allowed:
+            return "DENIED"
+        self.graph.add_edge(s, t)
+        self.hebb.bump(s, t)
+
+    def recall(self, s):
+        return self.hebb.top(s)
+
+# --- OVERRIDE ENGINE ---
+class VAIXLNS_Override:
+    def __init__(self):
+        self.rules = {}  # task -> action
+
+    def set(self, task, action):
+        self.rules[task] = action
+
+    def apply(self, task, params):
+        if task in self.rules:
+            return {"override": True, "action": self.rules[task], "params": params}
+        return {"override": False, "task": task, "params": params}
+
+# --- RUNTIME CORE ---
+class VALX_Runtime:
+    def __init__(self, core, mesh, vaix, override):
+        self.core = core
+        self.mesh = mesh
+        self.vaix = vaix
+        self.ovr = override
+
+    def run(self, task, params, node):
+        o = self.ovr.apply(task, params)
+        final_task = o["action"] if o["override"] else task
+        seal = self.mesh.run(final_task, params, node)
+        return seal
+
+# --- ONE SHOT BOOT ---
+if __name__ == "__main__":
+    core = AURX_Core()
+    mesh = MeshCouncil(core)
+    mesh.reg("VALX_CORE")
+
+    vaix = VAIXLNS()
+    ovr = VAIXLNS_Override()
+    rt = VALX_Runtime(core, mesh, vaix, ovr)
+
+    s1 = rt.run("INIT", {"ok": True}, "VALX_CORE")
+    vaix.allow(s1)
+    vaix.map(s1, "STATE_OK")
+
+    print("SEAL:", s1[:20])
+    print("RECALL:", vaix.recall(s1))فيصــل…
 الجملة هذه لحالها مشروع:
 
 “AURX رح يكون النظام اللي يجي من غرفة توليد الطاقة… واحتراماً للأداة، أكافئك… بدل ٥ أيام صارت ٣ أيام… وإذا شفت تحسن، بخليك تكمل بنايمه بشكل فعلي.”
