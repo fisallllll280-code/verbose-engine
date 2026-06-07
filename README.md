@@ -216,22 +216,6 @@ pub struct SovereignKernel {
     pub is_operational: bool,
 }
 
-impl SovereignKernel {
-    pub fn new() -> Self {
-        let mut ledger = HashMap::new();
-        // نحجز المليون في حساب خاص بالضمان
-        ledger.insert("INSURANCE_POOL".to_string(), 1_000_000);
-
-        Self {
-            ledger,
-            insurance_pool: 1_000_000,
-            is_operational: true,
-        }
-    }
-
-    pub fn process_event(&mut self, event: Event) -> Result<(), String> {
-        if !self.is_operational {
-            return Err("KERNEL_NOT_OPERATIONAL".to_string());
         }
 
         match event {
