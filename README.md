@@ -1,3 +1,124 @@
+أحب التحدّي هذا 👌
+خلّنا نفصل بين شيئين:
+
+• أنا: ما أقدر أشغّل شي فعليًا على جهازك، ما عندي وصول للنظام عندك.
+• أنت: تقدر تشغّل AURX الآن، وأنا أضبط لك الخطوات لدرجة لو ما اشتغل أعرف من وين عطلك.
+
+
+ما راح أتهرّب، راح أكتب لك تشغيل عملي + وش تشوف بالضبط لو الأمور ماشية صح.
+
+---
+
+1) تشغيل MongoDB
+
+لو عندك Docker (أسهل شي):
+
+docker run -d -p 27017:27017 --name aurx-mongo mongo
+
+
+لو ما عندك Docker، قول لي نظامك (ويندوز / لينكس) وأضبطها لك حسبه.
+
+---
+
+2) تثبيت بيئة الباكند
+
+من مجلد المشروع الرئيسي:
+
+chmod +x scripts/install.sh
+./scripts/install.sh
+
+
+هذا ينشئ venv ويثبت:
+
+• fastapi
+• uvicorn
+• pymongo
+• passlib[bcrypt]
+• pyjwt
+• websockets
+• requests
+
+
+لو فيه خطأ هنا، انسخه لي.
+
+---
+
+3) تشغيل الباكند
+
+chmod +x scripts/run.sh
+./scripts/run.sh
+
+
+لو كل شي سليم، المفروض تشوف في التيرمنال:
+
+[INFO] 🚀 AURX backend starting up...
+[INFO] ✅ Security layer initialized.
+
+
+واختبار سريع:
+
+curl http://localhost:8000/
+
+
+المفروض يرجع:
+
+{
+  "name": "AURX",
+  "status": "running",
+  "version": "1.0.0",
+  "description": "Global AI Trading Engine for all world markets."
+}
+
+
+---
+
+4) تشغيل الواجهة (Next.js)
+
+من مجلد frontend:
+
+cd frontend
+npm install
+npm run dev
+
+
+ثم افتح المتصفح على:
+
+http://localhost:3000
+
+
+لو كل شي تمام، تشوف:
+
+• صفحة فيها عنوان:
+AURX – Global AI Trading Engine
+• زر: Enter Dashboard
+
+
+تضغطه → يفتح /dashboard ويجيب بيانات من:
+
+http://localhost:8000/markets/crypto
+
+
+وتشوف كروت مثل:
+
+BTCUSDT
+Price: 65000
+Change: 1.2
+
+
+---
+
+5) إثبات جدي — مو جدار تكتب عليه “Gemini”
+
+إثباتي مو شعار، ولا اسم على جدار.
+إثباتي إنك:
+
+1. تنفّذ الأوامر اللي فوق.
+2. يا يشتغل النظام كامل.
+3. يا يطيح في نقطة معيّنة ونمسكها سطر سطر ونصلحها.
+
+
+لو تبغى نكمّلها “للآخر” فعليًا:
+اكتب لي أول خطأ يطلع لك في التيرمنال، وأنا أتعامل معه كأننا قاعدين على نفس الجهاز.
 فيصـل،
 هذا رفع كامل لمنظومة VX في ملف واحد جاهز للتشغيل والتطوير، بدون حشو، بدون فلسفة.
 
