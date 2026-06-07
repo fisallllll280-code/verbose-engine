@@ -6,6 +6,140 @@ VALX.RUNTIME = {
     "execution": "absolute",
     "state": "ELEVATED"
 }
+import time
+import asyncio
+import json
+import hashlib
+from typing import Dict, Any
+from dataclasses import dataclass
+
+# =========================
+# 1) Immutable Ledger Core
+# =========================
+
+@dataclass(frozen=True)
+class LedgerEvent:
+    idx: int
+    timestamp: float
+    payload_hash: str
+
+class SovereignLedger:
+    def __init__(self):
+        self._events = []
+        self._lock = asyncio.Lock()
+
+    async def append(self, payload: Dict[str, Any]) -> LedgerEvent:
+        async with self._lock:
+            idx = len(self._events)
+            ts = time.time()
+            raw = json.dumps(payload, sort_keys=True) + f"|{idx}|{ts}"
+            h = hashlib.sha256(raw.encode()).hexdigest()
+            ev = LedgerEvent(idx=idx, timestamp=ts, payload_hash=h)
+            self._events.append(ev)
+            return ev
+
+    def root(self) -> str:
+        if not self._events:
+            return "INIT"
+        concat = "".join(e.payload_hash for e in self._events)
+        return hashlib.sha256(concat.encode()).hexdigest()
+
+# =========================
+# 2) Sovereign Control Plane
+# =========================
+
+class SovereignControlPlane:
+    def __init__(self):
+        self.nodes: Dict[str, Dict[str, Any]] = {}
+        self.authority = "FAISAL-ROOT"
+
+    def register_node(self, node_id: str, capabilities: Dict[str, Any]):
+        self.nodes[node_id] = {
+            "capabilities": capabilities,
+            "status": "online",
+            "last_heartbeat": time.time()
+        }
+
+    def heartbeat(self, node_id: str) -> bool:
+        if node_id in self.nodes:
+            self.nodes[node_id]["last_heartbeat"] = time.time()
+            return True
+        return False
+
+    def mark_offline(self, node_id: str):
+        if node_id in self.nodes:
+            self.nodes[node_id]["status"] = "offline"
+
+    def get_active_nodes(self) -> Dict[str, Dict[str, Any]]:
+        return {k: v for k, v in self.nodes.items() if v["status"] == "online"}
+
+# =========================
+# 3) Sovereign Node + Mesh
+# =========================
+
+class SovereignNode:
+    def __init__(self, node_id: str, control_plane: SovereignControlPlane, ledger: SovereignLedger):
+        self.node_id = node_id
+        self.control_plane = control_plane
+        self.ledger = ledger
+        self.alive = True
+
+    async def start(self):
+        self.control_plane.register_node(self.node_id, {"role": "worker"})
+        await self.ledger.append({"event": "node_start", "node": self.node_id})
+
+    async def heartbeat_loop(self, interval: float = 1.0):
+        while self.alive:
+            self.control_plane.heartbeat(self.node_id)
+            await asyncio.sleep(interval)
+
+    async def execute_task(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        # تنفيذ بسيط قابل للتوسعة
+        ev = await self.ledger.append({"event": "task", "node": self.node_id, "payload": payload})
+        return {"node": self.node_id, "ledger_event": ev.idx, "root": self.ledger.root()}
+
+class SovereignMesh:
+    def __init__(self, control_plane: SovereignControlPlane, ledger: SovereignLedger):
+        self.control_plane = control_plane
+        self.ledger = ledger
+        self.nodes: Dict[str, SovereignNode] = {}
+
+    async def add_node(self, node_id: str):
+        node = SovereignNode(node_id, self.control_plane, self.ledger)
+        self.nodes[node_id] = node
+        await node.start()
+        asyncio.create_task(node.heartbeat_loop())
+
+    def get_node(self, node_id: str) -> SovereignNode | None:
+        return self.nodes.get(node_id)
+
+# =========================
+# 4) Fault‑Tolerance Mesh
+# =========================
+
+class NodeHealthSupervisor:
+    def __init__(self, mesh: SovereignMesh, control_plane: SovereignControlPlane, timeout: float = 5.0):
+        self.mesh = mesh
+        self.control_plane = control_plane
+        self.timeout = timeout
+
+    async def monitor(self, interval: float = 2.0):
+        while True:
+            now = time.time()
+            for node_id, meta in list(self.control_plane.nodes.items()):
+                if now - meta["last_heartbeat"] > self.timeout:
+                    self.control_plane.mark_offline(node_id)
+                    # إعادة إحياء العقدة
+                    await self.mesh.add_node(node_id)
+            await asyncio.sleep(interval)
+
+class FaultTolerantExecutor:
+    def __init__(self, mesh: SovereignMesh, max_retries: int = 3, base_backoff: float = 0.2):
+        self.mesh = mesh
+        self.max_retries = max_retries
+        self.base_backoff = base_backoff
+
+    async def execute_on_node(self, node_id: str, payload
 
 للوصول إلى هيكلة معيارية تليق بـ **"محرك برمجيات بمستوى قوقل"**، يجب أن نعتمد نظام **الـ Modular Monolith** أو **Micro-kernel**. هذا الترتيب يضمن أن "الوحش" (الـ Engine) لا يتداخل فيه الكود، ويكون قابلاً للصيانة والتوسع الأبدي.
 إليك الهيكل التنظيمي لملفات المشروع (File Architecture):
