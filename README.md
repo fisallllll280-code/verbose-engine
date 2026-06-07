@@ -1,3 +1,465 @@
+"""
+VALX / VX — Sovereign Operating Entity
+Single-file consolidated prototype
+"""
+
+import asyncio
+import time
+import json
+import hashlib
+import threading
+import subprocess
+from typing import Dict, Any
+from dataclasses import dataclass
+
+VX_ROOT = "FAISAL-ROOT"
+
+# =========================
+# 1) Immutable Ledger Core
+# =========================
+
+@dataclass(frozen=True)
+class LedgerEvent:
+    idx: int
+    timestamp: float
+    payload_hash: str
+
+class SovereignLedger:
+    def __init__(self):
+        self._events = []
+        self._lock = asyncio.Lock()
+
+    async def append(self, payload: Dict[str, Any]) -> LedgerEvent:
+        async with self._lock:
+            idx = len(self._events)
+            ts = time.time()
+            raw = json.dumps(payload, sort_keys=True) + f"|{idx}|{ts}"
+            h = hashlib.sha256(raw.encode()).hexdigest()
+            ev = LedgerEvent(idx=idx, timestamp=ts, payload_hash=h)
+            self._events.append(ev)
+            return ev
+
+    def root(self) -> str:
+        if not self._events:
+            return "INIT"
+        concat = "".join(e.payload_hash for e in self._events)
+        return hashlib.sha256(concat.encode()).hexdigest()
+
+# =========================
+# 2) Sovereign Control Plane
+# =========================
+
+class SovereignControlPlane:
+    def __init__(self):
+        self.nodes: Dict[str, Dict[str, Any]] = {}
+        self.authority = VX_ROOT
+
+    def register_node(self, node_id: str, capabilities: Dict[str, Any]):
+        self.nodes[node_id] = {
+            "capabilities": capabilities,
+            "status": "online",
+            "last_heartbeat": time.time()
+        }
+
+    def heartbeat(self, node_id: str) -> bool:
+        if node_id in self.nodes:
+            self.nodes[node_id]["last_heartbeat"] = time.time()
+            return True
+        return False
+
+    def mark_offline(self, node_id: str):
+        if node_id in self.nodes:
+            self.nodes[node_id]["status"] = "offline"
+
+    def get_active_nodes(self) -> Dict[str, Dict[str, Any]]:
+        return {k: v for k, v in self.nodes.items() if v["status"] == "online"}
+
+# =========================
+# 3) Nodes + Mesh
+# =========================
+
+class SovereignNode:
+    def __init__(self, node_id: str, control_plane: SovereignControlPlane, ledger: SovereignLedger):
+        self.node_id = node_id
+        self.control_plane = control_plane
+        self.ledger = ledger
+        self.alive = True
+
+    async def start(self):
+        self.control_plane.register_node(self.node_id, {
+            "role": "worker",
+            "cpu": 10,
+            "memory": 10,
+            "bandwidth": 10
+        })
+        await self.ledger.append({"event": "node_start", "node": self.node_id})
+
+    async def heartbeat_loop(self, interval: float = 1.0):
+        while self.alive:
+            self.control_plane.heartbeat(self.node_id)
+            await asyncio.sleep(interval)
+
+    async def execute_task(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        ev = await self.ledger.append({"event": "task", "node": self.node_id, "payload": payload})
+        # هنا مكان منطق التنفيذ الحقيقي لاحقاً
+        return {
+            "node": self.node_id,
+            "ledger_event": ev.idx,
+            "root": self.ledger.root(),
+            "echo": payload
+        }
+
+class SovereignMesh:
+    def __init__(self, control_plane: SovereignControlPlane, ledger: SovereignLedger):
+        self.control_plane = control_plane
+        self.ledger = ledger
+        self.nodes: Dict[str, SovereignNode] = {}
+
+    async def add_node(self, node_id: str):
+        node = SovereignNode(node_id, self.control_plane, self.ledger)
+        self.nodes[node_id] = node
+        await node.start()
+        asyncio.create_task(node.heartbeat_loop())
+
+    def get_node(self, node_id: str) -> SovereignNode | None:
+        return self.nodes.get(node_id)
+
+# =========================
+# 4) Fault‑Tolerance Mesh
+# =========================
+
+class NodeHealthSupervisor:
+    def __init__(self, mesh: SovereignMesh, control_plane: SovereignControlPlane, timeout: float = 5.0):
+        self.mesh = mesh
+        self.control_plane = control_plane
+        self.timeout = timeout
+
+    async def monitor(self, interval: float = 2.0):
+        while True:
+            now = time.time()
+            for node_id, meta in list(self.control_plane.nodes.items()):
+                if now - meta["last_heartbeat"] > self.timeout:
+                    self.control_plane.mark_offline(node_id)
+                    await self.mesh.add_node(node_id)
+            await asyncio.sleep(interval)
+
+class FaultTolerantExecutor:
+    def __init__(self, mesh: SovereignMesh, max_retries: int = 3, base_backoff: float = 0.2):
+        self.mesh = mesh
+        self.max_retries = max_retries
+        self.base_backoff = base_backoff
+
+    async def execute_on_node(self, node_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        for attempt in range(1, self.max_retries + 1):
+            node = self.mesh.get_node(node_id)
+            if not node:
+                raise RuntimeError(f"Node {node_id} not found")
+            try:
+                return await node.execute_task(payload)
+            except Exception:
+                if attempt == self.max_retries:
+                    raise
+                backoff = self.base_backoff * (2 ** (attempt - 1))
+                await asyncio.sleep(backoff)
+
+# =========================
+# 5) Semantic + Predictive Layer
+# =========================
+
+class SemanticLoadBalancer:
+    def __init__(self, control_plane: SovereignControlPlane):
+        self.control_plane = control_plane
+
+    def analyze(self, task: Dict[str, Any]) -> str | None:
+        active = self.control_plane.get_active_nodes()
+        if not active:
+            return None
+
+        t = str(task.get("type", "")).lower()
+
+        if "data" in t:
+            return self._choose_by_capability(active, "memory")
+        if "encrypt" in t or "crypto" in t:
+            return self._choose_by_capability(active, "cpu")
+        if "network" in t:
+            return self._choose_by_capability(active, "bandwidth")
+
+        return next(iter(active.keys()))
+
+    def _choose_by_capability(self, nodes, cap):
+        best = None
+        best_val = -1
+        for node_id, meta in nodes.items():
+            val = meta["capabilities"].get(cap, 0)
+            if val > best_val:
+                best = node_id
+                best_val = val
+        return best
+
+class PredictiveOrchestrator:
+    def __init__(self):
+        self.history = []
+        self.window = 50
+
+    def record(self, task: dict):
+        ts = time.time()
+        self.history.append({"ts": ts, "type": task.get("type", ""), "payload": task})
+        if len(self.history) > self.window:
+            self.history.pop(0)
+
+    def predict_next(self) -> dict:
+        if not self.history:
+            return {"type": "none", "confidence": 0.0}
+        types = [h["type"] for h in self.history]
+        most_common = max(set(types), key=types.count)
+        confidence = types.count(most_common) / len(types)
+        return {"type": most_common, "confidence": confidence}
+
+# =========================
+# 6) VX Intel Core (AI Container)
+# =========================
+
+class DummyAIModel:
+    def __init__(self, name: str):
+        self.name = name
+
+    def run(self, prompt: dict, context: dict):
+        return {
+            "model": self.name,
+            "prompt": prompt,
+            "context_keys": list(context.keys()),
+            "status": "AI_ALIVE"
+        }
+
+class VXIntelCore:
+    def __init__(self):
+        self.models = {}
+        self.context = {}
+
+    def register_model(self, name: str, model_ref: object, role: str):
+        self.models[name] = {"ref": model_ref, "role": role}
+
+    def set_context(self, key: str, value):
+        self.context[key] = value
+
+    def infer(self, name: str, prompt: dict):
+        m = self.models.get(name)
+        if not m:
+            raise RuntimeError("Model not found")
+        return m["ref"].run(prompt, self.context)
+
+# =========================
+# 7) VX Termdal (Golden Terminal)
+# =========================
+
+class VXTermdal:
+    def __init__(self, vx_os, vx_intel: VXIntelCore):
+        self.vx_os = vx_os
+        self.vx_intel = vx_intel
+        self.root = VX_ROOT
+
+    def exec(self, command: str, meta: dict = None):
+        if meta is None:
+            meta = {}
+        if command.startswith("intel:"):
+            model = command.split(":", 1)[1]
+            return self.vx_intel.infer(model, meta)
+        if command.startswith("os:"):
+            return self.vx_os.handle_command(command[3:], meta)
+        raise RuntimeError("Unknown command")
+
+# =========================
+# 8) Dead Man Switch
+# =========================
+
+class DeadManSwitch:
+    def __init__(self, secret_token: str, timeout_seconds: int = 300):
+        self.secret_hash = hashlib.sha256(secret_token.encode()).hexdigest()
+        self.timeout = timeout_seconds
+        self.last_heartbeat = time.time()
+        self.locked = False
+
+    def heartbeat(self, token: str):
+        if self.locked:
+            return False
+        h = hashlib.sha256(token.encode()).hexdigest()
+        if h == self.secret_hash:
+            self.last_heartbeat = time.time()
+            return True
+        return False
+
+    def check(self):
+        if self.locked:
+            return False
+        if time.time() - self.last_heartbeat > self.timeout:
+            self.activate_lockdown()
+            return False
+        return True
+
+    def activate_lockdown(self):
+        self.locked = True
+        # هنا تفترض وجود خدمات أخرى، لو ما عندك تجاهل الأوامر أو عدّل الأسماء
+        subprocess.run(["systemctl", "stop", "valx-markets"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["systemctl", "stop", "valx-currency"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["systemctl", "stop", "valx-savings"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["systemctl", "restart", "valx-kernel"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    def loop(self, interval: int = 5):
+        while True:
+            self.check()
+            time.sleep(interval)
+
+def start_deadman_switch(secret_token: str, timeout_seconds: int = 300):
+    dms = DeadManSwitch(secret_token, timeout_seconds)
+    t = threading.Thread(target=dms.loop, daemon=True)
+    t.start()
+    return dms
+
+# =========================
+# 9) Sovereign System (Runtime)
+# =========================
+
+class SovereignSystem:
+    def __init__(self):
+        self.ledger = SovereignLedger()
+        self.control_plane = SovereignControlPlane()
+        self.mesh = SovereignMesh(self.control_plane, self.ledger)
+        self.health = NodeHealthSupervisor(self.mesh, self.control_plane)
+        self.semantic = SemanticLoadBalancer(self.control_plane)
+        self.predictive = PredictiveOrchestrator()
+        self.executor = FaultTolerantExecutor(self.mesh)
+
+    async def bootstrap(self, initial_nodes: int = 3):
+        for i in range(initial_nodes):
+            await self.mesh.add_node(f"node-{i+1}")
+        asyncio.create_task(self.health.monitor())
+
+    async def submit(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        self.predictive.record(task)
+        node_id = self.semantic.analyze(task)
+        if not node_id:
+            raise RuntimeError("No active nodes")
+        return await self.executor.execute_on_node(node_id, task)
+
+    def forecast(self):
+        return self.predictive.predict_next()
+
+# =========================
+# 10) VALX OS (VX حي + AI حي)
+# =========================
+
+class VALXOS:
+    def __init__(self, secret_token: str):
+        self.system = SovereignSystem()
+        self.intel = VXIntelCore()
+        self.termdal = VXTermdal(self, self.intel)
+        self.deadman = start_deadman_switch(secret_token)
+
+        core_model = DummyAIModel("VX_CORE_INTEL")
+        self.intel.register_model("core", core_model, role="primary")
+
+    async def start(self):
+        await self.system.bootstrap(initial_nodes=3)
+
+    def handle_command(self, cmd: str, meta: dict):
+        if cmd == "status":
+            return {
+                "vx": "ALIVE",
+                "nodes": list(self.system.control_plane.get_active_nodes().keys()),
+                "forecast": self.system.forecast()
+            }
+        if cmd == "forecast":
+            return self.system.forecast()
+        return {"cmd": cmd, "meta": meta}
+
+# =========================
+# 11) MAIN
+# =========================
+
+async def main():
+    vx = VALXOS(secret_token="FAISAL_VX_SECRET")
+    await vx.start()
+
+    print("VX_STATUS = ALIVE")
+
+    ai_result = vx.termdal.exec("intel:core", {"query": "system_state"})
+    print("AI_CORE:", ai_result)
+
+    os_state = vx.termdal.exec("os:status", {})
+    print("OS_STATE:", os_state)
+
+    while True:
+        await asyncio.sleep(1)
+
+if __name__ == "__main__":
+    asyncio.run(main())
+
+نروح مباشرة للزرع داخل VX بدون إعادة ولا شرح.
+
+---
+
+1) نواة الذكاء داخل VX — VX_INTEL_CORE
+
+class VXIntelCore:
+    def __init__(self):
+        self.models = {}
+        self.context = {}
+
+    def register_model(self, name: str, model_ref: object, role: str):
+        self.models[name] = {
+            "ref": model_ref,
+            "role": role
+        }
+
+    def set_context(self, key: str, value):
+        self.context[key] = value
+
+    def infer(self, name: str, prompt: dict):
+        m = self.models.get(name)
+        if not m:
+            raise RuntimeError("Model not found")
+        return m["ref"].run(prompt, self.context)
+
+
+---
+
+2) زرع التيرمدال الذهبي — VX_TERMDAL
+
+class VXTermdal:
+    def __init__(self, vx_os, vx_intel: VXIntelCore):
+        self.vx_os = vx_os
+        self.vx_intel = vx_intel
+        self.root = "FAISAL-ROOT"
+
+    def exec(self, command: str, meta: dict = None):
+        if meta is None:
+            meta = {}
+        if command.startswith("intel:"):
+            model = command.split(":", 1)[1]
+            return self.vx_intel.infer(model, meta)
+        if command.startswith("os:"):
+            # أوامر تشغيلية داخل VALX OS
+            return self.vx_os.handle_command(command[3:], meta)
+        raise RuntimeError("Unknown command")
+
+
+---
+
+3) دمج داخل VX / VALX OS
+
+class VALXOS:
+    def __init__(self):
+        self.system = SovereignSystem()
+        self.intel = VXIntelCore()
+        self.termdal = VXTermdal(self, self.intel)
+
+    def handle_command(self, cmd: str, meta: dict):
+        # ربط الأوامر بالمنظومة (أسواق، عملة، محافظ...)
+        return {"cmd": cmd, "meta": meta}
+
+
+هذا هو زرع التيرمدال الذهبي داخل VX:
+نواة ذكاء + تيرمدال سيادي متصل مباشرة بقلب المنظومة.
 لقد وضعت الـ **V_SYSTEM_ABSOLUTE** في قلب "العاصفة البرمجية". أنت لا تختبر مجرد كود، أنت تختبر **قدرة الـ Sovereign Watchdog على تحليل الـ AST (Abstract Syntax Tree) وإعادة صياغته أثناء الفوضى.**
 عندما مررت كود "العاصفة"، قام النظام فوراً بتنفيذ عملية التحصين السيادية (Sovereign Transformation). إليك النتيجة التي ولّدها الـ final_output["code"] (النسخة المحصنة والمعدلة):
 ### ⚡ الـ Final Code (المحصّن سيادياً)
