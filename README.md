@@ -1,6 +1,321 @@
 جاهــز يا فيصــل.
 ما راح ألف ولا أشرح… أعطيك الآن VX_SPEC.md كامل، جاهز، نظيف، ثابت، نسخة مواصفة رسمية — بالضبط الشي اللي كنت تطلبه من البداية.
-# ============================================================
+# ============================================================تمام يا فيصل.
+أنت تقرر. أنا أنفّذ.
+طلبت: كود واحد يجمع كل ما في الجلسة — بدون نقص.
+
+هذا ملف واحد موحّد يلخّص كل ما بنيناه مفهوميًا في الجلسة، بشكل هندسي مباشر:
+
+• Runtime (الدستور)
+• Identity (المواطنة)
+• VX‑Coin (العملة)
+• Ledger / Bank (الحسابات + الرصيد)
+• Treasury (الخزينة)
+• Payment Network (VX‑PAY)
+• AI Agents (Auditor, Executor, Architect)
+• Service Market
+• AI Task Execution
+
+
+كلها في نموذج واحد مبسط، بصيغة Lean‑style / pseudo‑Lean، تقدر تطوره أو تترجمه لأي لغة لاحقًا.
+
+/-
+  VX v1.0-SOVEREIGN — Unified Core Model
+  --------------------------------------
+  هذا الملف يجمع كل المفاهيم التي بُنيت في الجلسة في نموذج واحد:
+  - Runtime (الدستور)
+  - Identity (المواطنة)
+  - VX-Coin (العملة)
+  - Ledger / Bank
+  - Treasury
+  - Payment Network (VX-PAY)
+  - AI Agents (Auditor, Executor, Architect)
+  - Service Market
+  - AI Task Execution
+-/
+
+-------------------------
+-- 0) الدستور Runtime
+-------------------------
+structure Law where
+  id      : String
+  content : String
+  deriving Repr
+
+structure Runtime where
+  version : String
+  laws    : List Law
+  locked  : Bool -- Bootstrap Lock
+  deriving Repr
+
+def constitutionalRuntime : Runtime :=
+  { version := "v1.0-SOVEREIGN",
+    laws := [
+      { id := "NO_OVERDRAFT", content := "No account may go negative." },
+      { id := "SIGNED_ONLY",  content := "No operation without valid signature." },
+      { id := "AUDIT_ENFORCED", content := "All operations are auditable." }
+    ],
+    locked := true }
+
+-------------------------
+-- 1) الهوية Identity (VX-ID)
+-------------------------
+structure Identity where
+  id     : String
+  pubKey : String
+  deriving Repr
+
+structure IdentityState where
+  identities : List Identity
+  deriving Repr
+
+def createIdentity (st : IdentityState) (id : String) (pk : String) : IdentityState :=
+  { identities := { id := id, pubKey := pk } :: st.identities }
+
+-------------------------
+-- 2) العملة VX-Coin
+-------------------------
+abbrev CoinAmount := Nat
+
+structure CoinSupply where
+  totalSupply : CoinAmount
+  maxSupply   : CoinAmount
+  deriving Repr
+
+structure MintEvent where
+  amount   : CoinAmount
+  issuedBy : String -- e.g. "COUNCIL"
+  deriving Repr
+
+def emissionAllowed (s : CoinSupply) (e : MintEvent) : Bool :=
+  e.amount + s.totalSupply ≤ s.maxSupply
+
+def applyMint (s : CoinSupply) (e : MintEvent) : Option CoinSupply :=
+  if emissionAllowed s e then
+    some { s with totalSupply := s.totalSupply + e.amount }
+  else
+    none
+
+-------------------------
+-- 3) الحسابات / البنك (Ledger / Bank)
+-------------------------
+structure Account where
+  owner   : Identity
+  balance : CoinAmount
+  deriving Repr
+
+structure Ledger where
+  accounts : List Account
+  deriving Repr
+
+def findAccount (l : Ledger) (id : String) : Option Account :=
+  l.accounts.find? (fun a => a.owner.id = id)
+
+def updateAccount (l : Ledger) (acc : Account) : Ledger :=
+  let others := l.accounts.filter (fun a => a.owner.id ≠ acc.owner.id)
+  { accounts := acc :: others }
+
+-------------------------
+-- 4) التحويلات + VX-PAY
+-------------------------
+structure Transfer where
+  fromId    : String
+  toId      : String
+  amount    : CoinAmount
+  signature : String
+  deriving Repr
+
+def canPay (l : Ledger) (t : Transfer) : Bool :=
+  match findAccount l t.fromId with
+  | some a => a.balance ≥ t.amount
+  | none   => false
+
+def applyTransfer (l : Ledger) (t : Transfer) : Option Ledger :=
+  match findAccount l t.fromId, findAccount l t.toId with
+  | some fromAcc, some toAcc =>
+      if fromAcc.balance ≥ t.amount then
+        let fromAcc' := { fromAcc with balance := fromAcc.balance - t.amount }
+        let toAcc'   := { toAcc   with balance := toAcc.balance + t.amount }
+        let l1 := updateAccount l fromAcc'
+        let l2 := updateAccount l1 toAcc'
+        some l2
+      else none
+  | _, _ => none
+
+-------------------------
+-- 5) الخزينة Treasury
+-------------------------
+structure TreasuryState where
+  reserveBalance : CoinAmount
+  issuedCoins    : CoinAmount
+  deriving Repr
+
+def reserveRatio (t : TreasuryState) : Float :=
+  if t.issuedCoins = 0 then 1.0
+  else (Float.ofNat t.reserveBalance) / (Float.ofNat t.issuedCoins)
+
+def treasuryInvariant (t : TreasuryState) : Bool :=
+  reserveRatio t ≥ 1.0 -- مثال: 100% احتياطي
+
+-------------------------
+-- 6) AI Agents (Auditor, Executor, Architect)
+-------------------------
+inductive AgentRole
+  | Auditor
+  | Executor
+  | Architect
+  deriving Repr
+
+structure Agent where
+  agentId   : String
+  role      : AgentRole
+  modelHash : String
+  deriving Repr
+
+-- Auditor: يتحقق من صحة العملية
+def auditTransfer (rt : Runtime) (l : Ledger) (t : Transfer) : Bool :=
+  -- هنا نطبق القوانين الأساسية: لا سالب، توقيع، إلخ (مبسطة)
+  canPay l t
+
+-- Executor: ينفذ العملية بعد التدقيق
+def executeTransfer (rt : Runtime) (l : Ledger) (t : Transfer) : Option Ledger :=
+  if auditTransfer rt l t then
+    applyTransfer l t
+  else
+    none
+
+-------------------------
+-- 7) السوق Service Market
+-------------------------
+structure Service where
+  serviceId : String
+  provider  : Identity
+  price     : CoinAmount
+  desc      : String
+  deriving Repr
+
+structure ServiceOrder where
+  orderId  : String
+  buyer    : Identity
+  service  : Service
+  deriving Repr
+
+def settleServiceOrder (rt : Runtime) (l : Ledger) (o : ServiceOrder) : Option Ledger :=
+  let t : Transfer :=
+    { fromId := o.buyer.id,
+      toId   := o.service.provider.id,
+      amount := o.service.price,
+      signature := "sig" }
+  executeTransfer rt l t
+
+-------------------------
+-- 8) AI Task Execution Service
+-------------------------
+structure AITask where
+  taskId    : String
+  taskType  : String
+  input     : String
+  requested : Identity
+  deriving Repr
+
+structure AITaskResult where
+  taskId     : String
+  output     : String
+  executedBy : String
+  deriving Repr
+
+def executeAITask (agent : Agent) (task : AITask) : AITaskResult :=
+  { taskId := task.taskId,
+    output := s!"AI({agent.agentId}) executed task: {task.input}",
+    executedBy := agent.agentId }
+
+-------------------------
+-- 9) مثال تشغيل يغطي كل شيء
+-------------------------
+def example : IO Unit := do
+  -- Runtime
+  let rt := constitutionalRuntime
+
+  -- Identities
+  let root : Identity := { id := "ROOT", pubKey := "pk_root" }
+  let c1   : Identity := { id := "CITIZEN_01", pubKey := "pk_c1" }
+  let c2   : Identity := { id := "CITIZEN_02", pubKey := "pk_c2" }
+
+  -- Ledger + Accounts
+  let ledger : Ledger :=
+    { accounts := [
+        { owner := root, balance := 999500 },
+        { owner := c1,   balance := 500 },
+        { owner := c2,   balance := 0 }
+      ] }
+
+  -- Treasury
+  let treasury : TreasuryState :=
+    { reserveBalance := 1_000_000,
+      issuedCoins    := 1_000_000 }
+
+  IO.println s!"Treasury OK? {treasuryInvariant treasury}"
+
+  -- Agents
+  let auditor  : Agent := { agentId := "AUDITOR_1", role := .Auditor,  modelHash := "h1" }
+  let executor : Agent := { agentId := "EXECUTOR_1", role := .Executor, modelHash := "h2" }
+
+  -- Payment: CITIZEN_01 → ROOT (500)
+  let t1 : Transfer :=
+    { fromId := c1.id, toId := root.id, amount := 500, signature := "sig" }
+
+  let ledger1? := executeTransfer rt ledger t1
+  match ledger1? with
+  | some l1 =>
+      IO.println s!"Ledger after t1: {l1.accounts}"
+  | none =>
+      IO.println "t1 rejected"
+
+  -- Service Market: خدمة يقدمها ROOT، يشتريها CITIZEN_02
+  let svc : Service :=
+    { serviceId := "SVC_1",
+      provider  := root,
+      price     := 100,
+      desc      := "Example service" }
+
+  let order : ServiceOrder :=
+    { orderId := "ORD_1",
+      buyer   := c2,
+      service := svc }
+
+  -- نحاول التسوية (ستفشل لأن c2 رصيده 0)
+  let ledger2? := settleServiceOrder rt (ledger1?.getD ledger) order
+  match ledger2? with
+  | some l2 =>
+      IO.println s!"Ledger after service order: {l2.accounts}"
+  | none =>
+      IO.println "Service order rejected (insufficient balance)"
+
+  -- AI Task Execution
+  let aiExec : Agent := { agentId := "AI_EXEC_1", role := .Executor, modelHash := "h3" }
+  let task : AITask :=
+    { taskId := "TASK_1",
+      taskType := "analysis",
+      input := "some data",
+      requested := c1 }
+
+  let result := executeAITask aiExec task
+  IO.println s!"AI Task Result: {result}"
+
+
+هذا هو الملف الموحد اللي يغطي كل شيء تكلمنا عنه —
+بأبسط شكل هندسي، بدون رمزية، جاهز للتطوير.
+
+لو تبغاه:
+
+• يتحول لـ مشروع حقيقي (مثلاً: Haskell / Rust / TypeScript / Python)
+• ينفصل إلى Modules
+• يُربط بقاعدة بيانات
+• يُحوّل إلى API
+
+
+قل الأمر…
+وأنا أنفّذ.
 # VX CLEAN EVENT RUNTIME — FULL PRODUCTION STACK (ONE FILE)
 # ============================================================
 
