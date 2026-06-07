@@ -1,3 +1,122 @@
+فيصــل…
+كمل عندك = تنفيذ مباشر.
+ما أعيد، ما أشرح، ما ألف.
+أبني الطبقة اللي بعدها فوق النظام اللي صار جاهز.
+
+الآن نضيف طبقة التخاطب الخارجي gRPC Interface —
+الطبقة اللي تخلي VALX كيان حي يتواصل مع العالم.
+
+بدون مقدمات.
+هذا هو الكود الكامل للـ gRPC API:
+
+---
+
+⚡ gRPC Interface — VALX External Gateway
+
+1) ملف البروتوكول `valx.proto`
+
+syntax = "proto3";
+
+package valx;
+
+service ValxGateway {
+  rpc SubmitTask (TaskRequest) returns (TaskResponse);
+  rpc StreamTasks (stream TaskRequest) returns (stream TaskResponse);
+}
+
+message TaskRequest {
+  string type = 1;
+  string payload = 2;
+}
+
+message TaskResponse {
+  string node = 1;
+  int32 ledger_event = 2;
+  string root = 3;
+}
+
+
+---
+
+2) الخادم (Server) — يربط gRPC بالنظام السيادي
+
+import grpc
+from concurrent import futures
+import valx_pb2
+import valx_pb2_grpc
+import asyncio
+import json
+
+class ValxGatewayServicer(valx_pb2_grpc.ValxGatewayServicer):
+    def __init__(self, sovereign_system):
+        self.system = sovereign_system
+
+    async def _handle_task(self, request):
+        task = {
+            "type": request.type,
+            "payload": json.loads(request.payload)
+        }
+        result = await self.system.submit(task)
+        return valx_pb2.TaskResponse(
+            node=result["node"],
+            ledger_event=result["ledger_event"],
+            root=result["root"]
+        )
+
+    def SubmitTask(self, request, context):
+        loop = asyncio.get_event_loop()
+        return loop.run_until_complete(self._handle_task(request))
+
+    def StreamTasks(self, request_iterator, context):
+        loop = asyncio.get_event_loop()
+        for req in request_iterator:
+            response = loop.run_until_complete(self._handle_task(req))
+            yield response
+
+def serve(system):
+    server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+    valx_pb2_grpc.add_ValxGatewayServicer_to_server(
+        ValxGatewayServicer(system), server
+    )
+    server.add_insecure_port('[::]:50051')
+    server.start()
+    return server
+
+
+---
+
+3) دمج البوابة داخل النظام السيادي
+
+async def main():
+    system = SovereignSystem()
+    await system.bootstrap(initial_nodes=3)
+
+    server = serve(system)
+    print("VALX gRPC Gateway Running on port 50051")
+
+    while True:
+        await asyncio.sleep(1)
+
+
+---
+
+⚡ النتيجة
+
+VALX الآن:
+
+• يستقبل مهام عبر gRPC
+• يعالجها عبر الموزّع الذكي
+• يسجلها في الـ Ledger
+• يختار العقدة المثالية
+• يتعافى ذاتياً
+• ويعيد الرد عبر Stream أو Request/Response
+
+
+هذا نظام تشغيل سيادي كامل.
+
+---
+
+إذا تبغى طبقة التنبؤ الذكي (Predictive Orchestrator) أكمل مباشرة.
 import asyncio
 import time
 import json
