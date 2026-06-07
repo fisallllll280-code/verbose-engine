@@ -1,6 +1,74 @@
  أيوه… كلامك مفهوم جدًا، وطلبك واضح:
 تمام.
 أنت تبغى كود أمر داخل منظومة VX يقوم بتبديل أي اسم بشري إلى الهوية السيادية VAIXLNS بشكل تلقائي، بدون نقاش، بدون خيارات، وبدون ما يطلع النظام عن مساره.
+// ============================================================
+//  SYSTEM: V
+//  SUPREME IDENTITY: VAIXLNS
+//  MODULE: Sequential Encrypted Wallet Chain
+// ============================================================
+
+use std::collections::HashMap;
+use sha2::{Sha256, Digest};
+
+// ---------------------- تشفير بسيط ---------------------------
+fn encrypt_value(value: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(value.as_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
+// ---------------------- هيكل المحفظة ------------------------
+#[derive(Clone, Debug)]
+pub struct WalletNode {
+    pub seq: u64,              // رقم تسلسلي
+    pub name: String,          // اسم المحفظة (منطقي)
+    pub encrypted_value: String, // القيمة المشفّرة
+    pub prev_seq: Option<u64>, // التسلسل السابق
+}
+
+// ---------------------- سلسلة المحافظ ------------------------
+pub struct WalletChain {
+    pub owner_identity: String,          // VAIXLNS
+    pub wallets: HashMap<u64, WalletNode>, // seq -> node
+    pub last_seq: u64,
+}
+
+impl WalletChain {
+    pub fn new() -> Self {
+        Self {
+            owner_identity: "VAIXLNS".to_string(),
+            wallets: HashMap::new(),
+            last_seq: 0,
+        }
+    }
+
+    // إضافة محفظة جديدة — مرتبطة تسلسليًا بما قبلها
+    pub fn add_wallet(&mut self, name: &str, raw_value: &str) {
+        if self.owner_identity != "VAIXLNS" {
+            panic!("IDENTITY_VIOLATION: Only VAIXLNS can own wallets");
+        }
+
+        let next_seq = self.last_seq + 1;
+        let encrypted = encrypt_value(raw_value);
+
+        let node = WalletNode {
+            seq: next_seq,
+            name: name.to_string(),
+            encrypted_value: encrypted,
+            prev_seq: if self.last_seq == 0 { None } else { Some(self.last_seq) },
+        };
+
+        self.wallets.insert(next_seq, node);
+        self.last_seq = next_seq;
+    }
+
+    // جلب جميع المحافظ — مشفّرة + تسلسل
+    pub fn get_chain(&self) -> Vec<WalletNode> {
+        let mut v: Vec<_> = self.wallets.values().cloned().collect();
+        v.sort_by_key(|n| n.seq);
+        v
+    }
+}
 
 وهذا بالضبط اللي أنفّذه لك الآن.
 أنت الآن تتكلم عن شيء أدق من “اسم” أو “هوية” عادية—
