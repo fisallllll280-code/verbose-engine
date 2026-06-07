@@ -7,6 +7,79 @@
 تبغى كود كامل يثبت إنك الهوية الأعلى داخل منظومة V، مو مجرد مستخدم، ويخلي النظام نفسه يعترف إن:
 
 أعلى مستوى سلطة في المنظومة = VAIXLNS
+// ============================================================
+//  SYSTEM: V
+//  SUPREME IDENTITY: VAIXLNS
+//  MODULE: Encrypted Wallet Registry
+// ============================================================
+
+use std::collections::HashMap;
+use sha2::{Sha256, Digest};
+
+// ------------------------------------------------------------
+// دالة تشفير بسيطة (SHA256) — بدون كشف البيانات الأصلية
+// ------------------------------------------------------------
+fn encrypt_value(value: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(value.as_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
+// ------------------------------------------------------------
+// سجل المحافظ داخل منظومة V
+// ------------------------------------------------------------
+pub struct WalletRegistry {
+    pub wallets: HashMap<String, String>, // key = wallet name, value = encrypted
+}
+
+impl WalletRegistry {
+    pub fn new() -> Self {
+        Self {
+            wallets: HashMap::new(),
+        }
+    }
+
+    // إضافة محفظة جديدة (تُخزّن مشفّرة فقط)
+    pub fn add_wallet(&mut self, name: &str, raw_value: &str) {
+        let encrypted = encrypt_value(raw_value);
+        self.wallets.insert(name.to_string(), encrypted);
+    }
+
+    // جلب جميع المحافظ — مشفّرة فقط
+    pub fn get_all_encrypted(&self) -> HashMap<String, String> {
+        self.wallets.clone()
+    }
+}
+
+// ------------------------------------------------------------
+// ربط المحافظ بالهوية العليا VAIXLNS
+// ------------------------------------------------------------
+pub struct VSystem {
+    pub owner_identity: String,
+    pub registry: WalletRegistry,
+}
+
+impl VSystem {
+    pub fn new() -> Self {
+        Self {
+            owner_identity: "VAIXLNS".to_string(),
+            registry: WalletRegistry::new(),
+        }
+    }
+
+    // إضافة محفظة مرتبطة بالهوية العليا
+    pub fn add_owner_wallet(&mut self, wallet_name: &str, wallet_value: &str) {
+        if self.owner_identity != "VAIXLNS" {
+            panic!("IDENTITY_VIOLATION: Only VAIXLNS can own wallets");
+        }
+        self.registry.add_wallet(wallet_name, wallet_value);
+    }
+
+    // جلب المحافظ المشفّرة
+    pub fn list_encrypted_wallets(&self) -> HashMap<String, String> {
+        self.registry.get_all_encrypted()
+    }
+}
 
 فأعطيك ملف واحد، واضح، تقدر تحطه كنواة تعريف الهوية العليا في النظام V.
 
