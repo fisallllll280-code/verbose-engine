@@ -1,3 +1,157 @@
+كلامك عن الـ Runtime يشرح كل شيء… وهذا بالضبط الجو اللي أحبّه 🔥
+
+أنت عطيت الفكرة، بس زي ما قلت: الشغل لازم يطلع كامل، مو مقاطع.
+فخلّنا ندمج Dynamic Weights + Latency Tracking في VANX بشكل متكامل.
+
+---
+
+1) تحديث `vanx_state.py` — إضافة الـ latency
+
+import aioredis
+import json
+
+REDIS_URL = "redis://localhost:6379"
+STATE_KEY = "vanx_state"
+TASK_QUEUE = "task_queue"
+DLQ = "dead_letter_queue"
+
+async def get_redis():
+    return aioredis.from_url(REDIS_URL, decode_responses=True)
+
+async def load_state(redis):
+    data = await redis.get(STATE_KEY)
+    if data:
+        return json.loads(data)
+
+    state = {
+        "nodes": {"Node_V": 3, "Node_A": 5, "Node_N": 2},
+        "health": {"Node_V": True, "Node_A": True, "Node_N": True},
+        "fail": {"Node_V": 0, "Node_A": 0, "Node_N": 0},
+        "latency": {"Node_V": 0.0, "Node_A": 0.0, "Node_N": 0.0}
+    }
+    await redis.set(STATE_KEY, json.dumps(state))
+    return state
+
+async def save_state(redis, state):
+    await redis.set(STATE_KEY, json.dumps(state))
+
+
+---
+
+2) تحديث `vanx_worker.py` — دمج Latency + Dynamic Weights + Retry + DLQ
+
+import asyncio
+import json
+import random
+import time
+from vanx_state import (
+    get_redis, load_state, save_state,
+    TASK_QUEUE, DLQ
+)
+
+class VANX_Worker:
+    def __init__(self, worker_id):
+        self.worker_id = worker_id
+
+    async def start(self):
+        self.redis = await get_redis()
+        print(f"[{self.worker_id}] Worker started.")
+
+        while True:
+            task_raw = await self.redis.brpop(TASK_QUEUE, timeout=5)
+            if not task_raw:
+                continue
+
+            _, task_data = task_raw
+            await self.process_with_retry(task_data)
+
+    async def process_with_retry(self, task_data):
+        task = json.loads(task_data)
+        retries = task.get("retries", 0)
+
+        state = await load_state(self.redis)
+        healthy = [n for n, h in state["health"].items() if h]
+
+        if not healthy:
+            await asyncio.sleep(2)
+            await self.redis.lpush(TASK_QUEUE, json.dumps(task))
+            return
+
+        # اختيار العقدة بناءً على أقل فشل + وزن ديناميكي
+        node = self.select_node(state, healthy)
+
+        start = time.perf_counter()
+        success = await self.execute(task, node)
+        duration = time.perf_counter() - start
+
+        await self.update_node_performance(node, duration)
+
+        if not success:
+            if retries < 3:
+                task["retries"] = retries + 1
+                await self.redis.lpush(TASK_QUEUE, json.dumps(task))
+                print(f"🔄 Retry {task['id']} ({retries+1}/3)")
+            else:
+                await self.redis.lpush(DLQ, json.dumps(task))
+                print(f"💀 DLQ: {task['id']} (Poison Pill)")
+
+    def select_node(self, state, healthy_nodes):
+        # ممكن تعديل المنطق لاحقاً، الآن: موازنة بين الوزن والفشل
+        def score(n):
+            # وزن أعلى + فشل أقل + زمن أقل = أفضل
+            w = state["nodes"][n]
+            f = state["fail"][n]
+            l = state["latency"][n]
+            return (w * 2) - (f * 3) - (l * 5)
+
+        return max(healthy_nodes, key=score)
+
+    async def update_node_performance(self, node, duration):
+        state = await load_state(self.redis)
+        prev = state["latency"][node]
+        state["latency"][node] = (prev * 0.9) + (duration * 0.1)
+
+        # إذا العقدة بطيئة جداً، قلل وزنها تدريجياً
+        if state["latency"][node] > 0.8:
+            state["nodes"][node] = max(1, state["nodes"][node] - 1)
+
+        await save_state(self.redis, state)
+
+    async def execute(self, task, node):
+        print(f"[{self.worker_id}] Executing {task['id']} on {node}")
+        await asyncio.sleep(random.uniform(0.2, 1.0))
+
+        if random.random() < 0.15:
+            print(f"[{self.worker_id}] Node {node} FAILED")
+            state = await load_state(self.redis)
+            state["health"][node] = False
+            state["fail"][node] += 1
+            await save_state(self.redis, state)
+            return False
+
+        print(f"[{self.worker_id}] Completed {task['id']} on {node}")
+        return True
+
+async def main():
+    worker = VANX_Worker("VX-W1")
+    await worker.start()
+
+if __name__ == "__main__":
+    asyncio.run(main())
+
+
+---
+
+بهذا الشكل، VANX الآن:
+
+• يراقب latency لكل عقدة.
+• يعدّل الأوزان ديناميكياً حسب الأداء.
+• يحمي نفسه من Poison Pills عبر DLQ.
+• يبقى Stateful وقابل للتوسع أفقياً.
+
+
+لو تبغى نكمّل للـ Mesh / Gossip أو Dashboard حي، قل بس:
+“Mesh” أو “Dashboard”… ونبنيها كـ طبقة فوق هذا الأساس.
 كلامك في الصميم، وأنا هنا لأتعلم وأرتقي بمستوى التنفيذ بناءً على هذا التوجيه. **VANX** الآن هو نظام تشغيل سيادي متكامل، والأساس الذي وضعته يفرض الاحترام.
 لقد طلبت الانتقال إلى المرحلة التالية: **الـ Mesh / Gossip Protocol**.
 سنقوم بدمج منطق **Gossip** داخل الـ VANX_Worker الحالي، لنجعل العقد لا تعتمد فقط على الـ Redis، بل تتحدث فيما بينها لتأكيد حالة الشبكة (Heartbeat Gossip). هذا سيجعل النظام **Resilient** حتى لو انقطع الاتصال بـ Redis لحظياً.
