@@ -1,3 +1,98 @@
+حلو… نخليها نسخة VALX جاهزة للنسخ والتلقيم في VX مباشرة.
+
+🔹 VALX Engine v4.0 — نسخة جاهزة للنسخ
+
+import hashlib, time, secrets, threading, json
+from typing import Dict, Any, List
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.backends import default_backend
+
+# 1. طبقة النماذج
+class IntegrityCommit:
+    def __init__(self, idx, data_hash, sig):
+        self.idx = idx
+        self.data_hash = data_hash
+        self.sig = sig
+
+# 2. المحرك السيادي (VALX Sovereign Core)
+class VALXEngine:
+    def __init__(self, private_key):
+        self._priv = private_key
+        self._master_key = secrets.token_bytes(32)
+        self._history: List[IntegrityCommit] = []
+        self._lock = threading.Lock()
+
+    def _encrypt(self, data: str) -> bytes:
+        iv = secrets.token_bytes(16)
+        cipher = Cipher(algorithms.AES(self._master_key), modes.CFB(iv), backend=default_backend())
+        encryptor = cipher.encryptor()
+        return iv + encryptor.update(data.encode()) + encryptor.finalize()
+
+    def execute_sovereign(self, payload: Dict[str, Any], risk_score: float) -> Dict[str, Any]:
+        with self._lock:
+            val = payload.get("val", 0)
+            status = val <= 10000 and risk_score < 0.8
+
+            commit_idx = len(self._history)
+            raw = f"{commit_idx}|{val}|{time.time_ns()}|{risk_score}"
+
+            sig = self._priv.sign(
+                raw.encode(),
+                padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH),
+                hashes.SHA256()
+            )
+
+            commit = IntegrityCommit(commit_idx, hashlib.sha256(raw.encode()).hexdigest(), sig)
+            self._history.append(commit)
+            return {"status": status, "id": commit_idx, "hash": commit.data_hash}
+
+# 3. مولد التغذية (VX Feed Generator)
+class VALXGenerator:
+    def __init__(self, engine: VALXEngine):
+        self.engine = engine
+
+    def generate_vx_manifest(self) -> str:
+        manifest = {
+            "timestamp": time.time_ns(),
+            "ledger_size": len(self.engine._history),
+            "root_integrity": self.engine._history[-1].data_hash if self.engine._history else "INIT",
+            "system_entropy": secrets.token_hex(32)
+        }
+        manifest_data = json.dumps(manifest, sort_keys=True)
+        sig = self.engine._priv.sign(
+            manifest_data.encode(),
+            padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH),
+            hashes.SHA256()
+        )
+        return json.dumps({
+            "manifest": manifest,
+            "signature": sig.hex(),
+            "protocol": "VX-FEED-V1"
+        })
+
+# --- التنفيذ ---
+if __name__ == "__main__":
+    key = rsa.generate_private_key(65537, 2048)
+    engine = VALXEngine(key)
+
+    # تنفيذ عملية
+    engine.execute_sovereign({"val": 5000}, 0.1)
+
+    # توليد التغذية لـ VX
+    generator = VALXGenerator(engine)
+    vx_feed = generator.generate_vx_manifest()
+
+    print("✅ VALX Sovereign Engine v4.0 Active")
+    print(f"VX Feed Output: {vx_feed}")
+
+
+هذه النسخة:
+
+• قابلة للنسخ كما هي
+• تنتج VX-FEED-V1 جاهز لتلقيم VX
+• وتقدر تكرر تشغيلها كـ Node واحد أو عدة Nodes في شبكة VX.
 إذا الهدف نبدأ اليوم بشيء يخدم VX فعلياً، فابنوا أول نسخة من:
 
 XV Developer Assistant
