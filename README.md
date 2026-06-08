@@ -1,3 +1,159 @@
+import json, time, hashlib, random
+from concurrent.futures import ThreadPoolExecutor
+import networkx as nx
+
+# --- SOVEREIGN HASH ---
+def vx_hash(obj):
+    raw = json.dumps(obj, sort_keys=True).encode()
+    return hashlib.sha3_512(raw).hexdigest()
+
+# --- AURX: CORE LEDGER + INTEGRITY ---
+class AURX_Core:
+    def __init__(self):
+        self.ledger = []
+        self.root = None
+
+    def process_event(self, t, d):
+        event = {"t": t, "d": d, "ts": time.time_ns()}
+        event["seal"] = vx_hash(event)
+        self.ledger.append(event)
+        self.root = vx_hash({"root": self.root, "last": event["seal"]})
+        return event["seal"]
+
+# --- MESH: COUNCIL ---
+class MeshCouncil:
+    def __init__(self, core, owner="FAISAL_VX"):
+        self.core = core
+        self.owner = owner
+        self.nodes = set()
+        self.exec = ThreadPoolExecutor(max_workers=8)
+
+    def reg(self, node):
+        self.nodes.add(node)
+
+    def run(self, task, params, node):
+        if node not in self.nodes:
+            return "DENIED:NODE"
+        payload = {"t": task, "p": params, "n": node, "o": self.owner}
+        f = self.exec.submit(self.core.process_event, task, payload)
+        return f.result()
+
+# --- VAIXLNS: GRAPH + HEBB ---
+class VAIXLNS_Hebb:
+    def __init__(self):
+        self.w = {}  # (s,t) : weight
+
+    def bump(self, s, t):
+        k = (s, t)
+        self.w[k] = self.w.get(k, 0) + 1
+        return self.w[k]
+
+    def top(self, s, k=3):
+        items = [(t, w) for (src, t), w in self.w.items() if src == s]
+        return sorted(items, key=lambda x: x[1], reverse=True)[:k]
+
+class VAIXLNS:
+    def __init__(self):
+        self.g = nx.DiGraph()
+        self.allowed = set()
+        self.hebb = VAIXLNS_Hebb()
+
+    def allow(self, seal):
+        self.allowed.add(seal)
+
+    def map(self, s, t):
+        if s not in self.allowed:
+            return "DENIED:SEAL"
+        self.g.add_edge(s, t)
+        self.hebb.bump(s, t)
+
+    def recall(self, s):
+        return self.hebb.top(s)
+
+# --- OVERRIDE ENGINE ---
+class VAIXLNS_Override:
+    def __init__(self):
+        self.rules = {}  # task -> new_task
+
+    def set(self, task, action):
+        self.rules[task] = action
+
+    def apply(self, task, params):
+        if task in self.rules:
+            return self.rules[task], params
+        return task, params
+
+# --- RUNTIME ---
+class VALX_Runtime:
+    def __init__(self, core, mesh, vaix, override):
+        self.core = core
+        self.mesh = mesh
+        self.vaix = vaix
+        self.ovr = override
+
+    def run(self, task, params, node):
+        t_final, p_final = self.ovr.apply(task, params)
+        seal = self.mesh.run(t_final, p_final, node)
+        return seal
+
+# --- GENERATION ENGINE (AUTO TASK LOOP) ---
+class VALX_Generator:
+    def __init__(self, rt: VALX_Runtime, vaix: VAIXLNS, node="VALX_CORE"):
+        self.rt = rt
+        self.vaix = vaix
+        self.node = node
+        self.locked = False
+
+    def lock(self):
+        self.locked = True
+
+    def step(self):
+        if self.locked:
+            return None
+        base_tasks = ["SCAN", "SECURE", "SYNC", "ANALYZE"]
+        task = random.choice(base_tasks)
+        params = {"lvl": random.randint(1, 9)}
+        seal = self.rt.run(task, params, self.node)
+        self.vaix.allow(seal)
+        self.vaix.map(seal, f"{task}_STATE")
+        return seal
+
+    def run_until(self, steps=10):
+        out = []
+        for _ in range(steps):
+            s = self.step()
+            if s is None:
+                break
+            out.append(s)
+        return out
+
+# --- ONE-SHOT BOOT + GENERATION LOCK ---
+if __name__ == "__main__":
+    core = AURX_Core()
+    mesh = MeshCouncil(core)
+    mesh.reg("VALX_CORE")
+
+    vaix = VAIXLNS()
+    ovr = VAIXLNS_Override()
+    rt = VALX_Runtime(core, mesh, vaix, ovr)
+
+    gen = VALX_Generator(rt, vaix, "VALX_CORE")
+
+    # boot
+    s_boot = rt.run("INIT", {"ok": True}, "VALX_CORE")
+    vaix.allow(s_boot)
+    vaix.map(s_boot, "STATE_OK")
+
+    # auto generation
+    seals = gen.run_until(steps=5)
+
+    # lock generation
+    gen.lock()
+
+    print("ROOT:", core.root[:20])
+    print("BOOT:", s_boot[:20])
+    print("GEN:", [s[:12] for s in seals])
+
 import json, time, hashlib
 from concurrent.futures import ThreadPoolExecutor
 import networkx as nx
