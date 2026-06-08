@@ -1,3 +1,144 @@
+إذا طبقت التحسينات التي ذكرتها، فسيكون شكل التغييرات الأساسية كالتالي:
+
+الاستيراد
+
+from concurrent.futures import ThreadPoolExecutor
+
+⸻
+
+VAIX مع Lock
+
+class VAIXLNS:
+    def __init__(self):
+        self.g = nx.DiGraph()
+        self.allowed = set()
+        self.hebb = VAIXLNS_Hebb()
+        self.lock = RLock()
+    def allow(self, seal):
+        with self.lock:
+            self.allowed.add(seal)
+    def map(self, s, t):
+        with self.lock:
+            if s not in self.allowed:
+                return "DENIED:SEAL"
+            self.g.add_edge(s, t)
+            self.hebb.bump(s, t)
+    def recall(self, s):
+        with self.lock:
+            return self.hebb.top(s)
+
+⸻
+
+إصلاح stop
+
+def stop(self):
+    self._stop.set()
+    self.thread.join(timeout=5)
+
+⸻
+
+استبدال last_saved_index بآخر Seal
+
+داخل MaintenanceThread:
+
+self.last_saved_seal = None
+
+ثم:
+
+def _collect_new_events(self):
+    with self.core.lock:
+        if self.last_saved_seal is None:
+            events = list(self.core.ledger)
+        else:
+            found = False
+            events = []
+            for e in self.core.ledger:
+                if found:
+                    events.append(e)
+                elif e["seal"] == self.last_saved_seal:
+                    found = True
+        if self.core.ledger:
+            self.last_saved_seal = self.core.ledger[-1]["seal"]
+        return events
+
+وفي الحلقة:
+
+new_events = self._collect_new_events()
+self.store.save_events(new_events)
+
+⸻
+
+Snapshot كامل
+
+def create_snapshot(self):
+    with self.core.lock:
+        snap = {
+            "ts": time.time_ns(),
+            "count": len(self.core.ledger),
+            "merkle_root": self.core.root,
+            "events": self.core.ledger,
+        }
+    fname = f"{self.path}/snap_{snap['ts']}.json"
+    with open(fname, "w", encoding="utf-8") as f:
+        json.dump(snap, f, ensure_ascii=False)
+    return snap
+
+⸻
+
+استرجاع من Snapshot
+
+def recover_snapshot(self, file_path):
+    with open(file_path, "r", encoding="utf-8") as f:
+        snap = json.load(f)
+    with self.core.lock:
+        self.core.ledger = snap["events"]
+        seals = [
+            e["seal"]
+            for e in self.core.ledger
+        ]
+        self.core.root = build_merkle_root(seals)
+
+⸻
+
+Merkle Verification
+
+def verify_merkle(self):
+    with self.core.lock:
+        seals = [
+            e["seal"]
+            for e in self.core.ledger
+        ]
+        calculated = build_merkle_root(seals)
+        return calculated == self.core.root
+
+⸻
+
+بعد هذه التعديلات يصبح عندك فعلياً:
+
+* Event Ledger
+* Merkle Integrity
+* Recovery Engine
+* Snapshot Engine
+* Persistent Store
+* Background Maintenance
+* Runtime Execution Layer
+* Override Layer
+* Hebbian Memory Layer
+* Graph Knowledge Layer
+* Thread Safety أساسية
+
+وهذا يرفع المشروع من Prototype متقدم إلى Runtime Framework تجريبي متكامل تقريباً. لكنه ما زال ينقصه أشياء كبيرة قبل الأنظمة الإنتاجية الحقيقية مثل:
+
+* WAL Logging
+* Metrics/Observability
+* Distributed Replication
+* Transaction Journal
+* Consensus/Leader Election
+* ACL/RBAC Security
+* API Layer
+* Health Checks & Monitoring
+
+لذلك تقييمه الواقعي بعد هذه التحسينات يقارب 8.5–9/10 كنواة Runtime محلية (Single Node Runtime)، وليس بعد نظاماً موزعاً على عدة عقد.
 نسخة أنظف وأكمل من VALX_Cleaner مع إصلاحات أساسية وإرجاع تقرير صيانة:
 
 import time
