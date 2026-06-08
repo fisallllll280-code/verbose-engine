@@ -2,6 +2,126 @@ import json, time, hashlib
 from concurrent.futures import ThreadPoolExecutor
 import networkx as nx
 
+# --- SOVEREIGN HASH ---
+def vx_hash(obj):
+    raw = json.dumps(obj, sort_keys=True).encode()
+    return hashlib.sha3_512(raw).hexdigest()
+
+# --- AURX: CORE LEDGER + INTEGRITY ---
+class AURX_Core:
+    def __init__(self):
+        self.ledger = []
+        self.root = None
+
+    def process_event(self, t, d):
+        event = {"t": t, "d": d, "ts": time.time_ns()}
+        event["seal"] = vx_hash(event)
+        self.ledger.append(event)
+        self.root = vx_hash({"root": self.root, "last": event["seal"]})
+        return event["seal"]
+
+# --- MESH: COUNCIL + HARD DENY ---
+class MeshCouncil:
+    def __init__(self, core, owner="FAISAL_VX"):
+        self.core = core
+        self.owner = owner
+        self.nodes = set()
+        self.exec = ThreadPoolExecutor(max_workers=8)
+
+    def reg(self, node):
+        self.nodes.add(node)
+
+    def run(self, task, params, node):
+        if node not in self.nodes:
+            return "DENIED:NODE"
+        payload = {"t": task, "p": params, "n": node, "o": self.owner}
+        f = self.exec.submit(self.core.process_event, task, payload)
+        return f.result()
+
+# --- VAIXLNS: GRAPH + HEBB + LOCKED CONTEXT ---
+class VAIXLNS_Hebb:
+    def __init__(self):
+        self.w = {}  # (s,t) : weight
+
+    def bump(self, s, t):
+        k = (s, t)
+        self.w[k] = self.w.get(k, 0) + 1
+        return self.w[k]
+
+    def top(self, s, k=3):
+        items = [(t, w) for (src, t), w in self.w.items() if src == s]
+        return sorted(items, key=lambda x: x[1], reverse=True)[:k]
+
+class VAIXLNS:
+    def __init__(self):
+        self.g = nx.DiGraph()
+        self.allowed = set()
+        self.hebb = VAIXLNS_Hebb()
+
+    def allow(self, seal):
+        self.allowed.add(seal)
+
+    def map(self, s, t):
+        if s not in self.allowed:
+            return "DENIED:SEAL"
+        self.g.add_edge(s, t)
+        self.hebb.bump(s, t)
+
+    def recall(self, s):
+        return self.hebb.top(s)
+
+# --- OVERRIDE ENGINE: TASK FUSE ---
+class VAIXLNS_Override:
+    def __init__(self):
+        self.rules = {}  # task -> new_task
+
+    def set(self, task, action):
+        self.rules[task] = action
+
+    def apply(self, task, params):
+        if task in self.rules:
+            return self.rules[task], params
+        return task, params
+
+# --- RUNTIME: SOVEREIGN CORE ---
+class VALX_Runtime:
+    def __init__(self, core, mesh, vaix, override):
+        self.core = core
+        self.mesh = mesh
+        self.vaix = vaix
+        self.ovr = override
+
+    def run(self, task, params, node):
+        t_final, p_final = self.ovr.apply(task, params)
+        seal = self.mesh.run(t_final, p_final, node)
+        return seal
+
+# --- ONE-SHOT BOOT SEQUENCE ---
+if __name__ == "__main__":
+    core = AURX_Core()
+    mesh = MeshCouncil(core)
+    mesh.reg("VALX_CORE")
+
+    vaix = VAIXLNS()
+    ovr = VAIXLNS_Override()
+    rt = VALX_Runtime(core, mesh, vaix, ovr)
+
+    s1 = rt.run("INIT", {"ok": True}, "VALX_CORE")
+    vaix.allow(s1)
+    vaix.map(s1, "STATE_OK")
+
+    s2 = rt.run("SECURE", {"depth": 13}, "VALX_CORE")
+    vaix.allow(s2)
+    vaix.map(s2, "MEM_LOCK")
+
+    print("ROOT:", core.root[:20])
+    print("S1:", s1[:20], "CTX:", vaix.recall(s1))
+    print("S2:", s2[:20], "CTX:", vaix.recall(s2))
+
+import json, time, hashlib
+from concurrent.futures import ThreadPoolExecutor
+import networkx as nx
+
 # --- AURX: CORE LEDGER ---
 class AURX_Core:
     def __init__(self):
