@@ -1,3 +1,118 @@
+نسخة أنظف وأكمل من VALX_Cleaner مع إصلاحات أساسية وإرجاع تقرير صيانة:
+
+import time
+from threading import RLock
+class VALX_Cleaner:
+    def __init__(self, core, vaix):
+        self.core = core
+        self.vaix = vaix
+        self.lock = RLock()
+    def dedup_ledger(self):
+        seen = set()
+        cleaned = []
+        for event in self.core.ledger:
+            seal = event.get("seal")
+            if seal in seen:
+                continue
+            seen.add(seal)
+            cleaned.append(event)
+        self.core.ledger = cleaned
+    def prune_old(self, max_age_ns: int):
+        now = time.time_ns()
+        self.core.ledger = [
+            event
+            for event in self.core.ledger
+            if now - event["ts"] <= max_age_ns
+        ]
+    def fix_broken_vaix(self):
+        valid_seals = {
+            event["seal"]
+            for event in self.core.ledger
+        }
+        # تنظيف قائمة السماح
+        self.vaix.allowed = {
+            seal
+            for seal in self.vaix.allowed
+            if seal in valid_seals
+        }
+        # حذف العقد الميتة تلقائياً
+        dead_nodes = [
+            node
+            for node in list(self.vaix.g.nodes())
+            if node not in valid_seals
+        ]
+        if dead_nodes:
+            self.vaix.g.remove_nodes_from(dead_nodes)
+    def stats(self):
+        return {
+            "ledger_events": len(self.core.ledger),
+            "allowed_count": len(self.vaix.allowed),
+            "graph_nodes": self.vaix.g.number_of_nodes(),
+            "graph_edges": self.vaix.g.number_of_edges(),
+        }
+    def auto_maintain(self, max_age_ns: int):
+        with self.lock:
+            before_events = len(self.core.ledger)
+            before_nodes = self.vaix.g.number_of_nodes()
+            self.dedup_ledger()
+            self.prune_old(max_age_ns)
+            self.fix_broken_vaix()
+            after_events = len(self.core.ledger)
+            after_nodes = self.vaix.g.number_of_nodes()
+            return {
+                "events_before": before_events,
+                "events_after": after_events,
+                "events_removed": before_events - after_events,
+                "nodes_before": before_nodes,
+                "nodes_after": after_nodes,
+                "nodes_removed": before_nodes - after_nodes,
+            }
+
+مثال التشغيل:
+
+if __name__ == "__main__":
+    core = AURX_Core()
+    mesh = MeshCouncil(core)
+    mesh.reg("VALX_CORE")
+    vaix = VAIXLNS()
+    ovr = VAIXLNS_Override()
+    rt = VALX_Runtime(
+        core,
+        mesh,
+        vaix,
+        ovr
+    )
+    s1 = rt.run(
+        "INIT",
+        {"ok": True},
+        "VALX_CORE"
+    )
+    vaix.allow(s1)
+    vaix.map(s1, "STATE_OK")
+    s2 = rt.run(
+        "SECURE",
+        {"lvl": 5},
+        "VALX_CORE"
+    )
+    vaix.allow(s2)
+    vaix.map(s2, "STATE_SECURE")
+    cleaner = VALX_Cleaner(
+        core,
+        vaix
+    )
+    report = cleaner.auto_maintain(
+        60 * 60 * 1_000_000_000  # ساعة
+    )
+    print("REPORT:", report)
+    print("STATS :", cleaner.stats())
+
+إذا كان هدفك VX/AURX كنظام طويل التشغيل، فالخطوة التالية ليست إضافة وظائف جديدة، بل إضافة:
+
+1. ￼ Snapshot Manager.
+2. ￼ Background Maintenance Thread.
+3. ￼ Merkle Ledger Verification.
+4. ￼ Persistent Event Store (SQLite/PostgreSQL).
+5. ￼ Recovery Engine عند إعادة التشغيل.
 import json, time, hashlib, random, threading
 from concurrent.futures import ThreadPoolExecutor
 import networkx as nx
