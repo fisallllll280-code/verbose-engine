@@ -1,3 +1,193 @@
+تم.
+
+هذا VX Frozen Kernel v1: ملف واحد، تشغيل واحد، تدفق واحد، بدون طبقات منفصلة أو توسعة.
+
+import time
+import json
+import sqlite3
+import threading
+import hashlib
+from threading import RLock
+from concurrent.futures import ThreadPoolExecutor
+import networkx as nx
+# =========================
+# HASH / MERKLE
+# =========================
+def vx_hash(obj):
+    raw = json.dumps(obj, sort_keys=True).encode()
+    return hashlib.sha3_512(raw).hexdigest()
+def merkle_hash(a, b):
+    return hashlib.sha3_512((a + b).encode()).hexdigest()
+def merkle_root(seals):
+    if not seals:
+        return None
+    layer = list(seals)
+    while len(layer) > 1:
+        nxt = []
+        for i in range(0, len(layer), 2):
+            l = layer[i]
+            r = layer[i + 1] if i + 1 < len(layer) else layer[i]
+            nxt.append(merkle_hash(l, r))
+        layer = nxt
+    return layer[0]
+# =========================
+# VX CORE (SINGLE SOURCE OF TRUTH)
+# =========================
+class VXCore:
+    def __init__(self):
+        self.lock = RLock()
+        self.ledger = []
+        self.root = None
+    def add_event(self, task, data):
+        with self.lock:
+            event = {
+                "t": task,
+                "d": data,
+                "ts": time.time_ns(),
+            }
+            event["seal"] = vx_hash(event)
+            self.ledger.append(event)
+            self._refresh()
+            return event["seal"]
+    def _refresh(self):
+        self.root = merkle_root([e["seal"] for e in self.ledger])
+# =========================
+# EXECUTION LOOP
+# =========================
+class VXRuntime:
+    def __init__(self, core):
+        self.core = core
+        self.nodes = set()
+        self.pool = ThreadPoolExecutor(max_workers=4)
+    def register(self, node):
+        self.nodes.add(node)
+    def execute(self, task, payload, node):
+        if node not in self.nodes:
+            return "DENIED"
+        return self.pool.submit(
+            self.core.add_event,
+            task,
+            {"node": node, "payload": payload}
+        ).result()
+# =========================
+# MEMORY GRAPH (SIMPLE)
+# =========================
+class VXMemory:
+    def __init__(self):
+        self.lock = RLock()
+        self.graph = nx.DiGraph()
+    def link(self, a, b):
+        with self.lock:
+            self.graph.add_edge(a, b)
+    def related(self, a):
+        with self.lock:
+            return list(self.graph.successors(a))
+# =========================
+# STORAGE
+# =========================
+class VXStore:
+    def __init__(self, path="vx.db"):
+        self.conn = sqlite3.connect(path, check_same_thread=False)
+        self.lock = RLock()
+        self._init()
+    def _init(self):
+        cur = self.conn.cursor()
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS ledger (
+            seal TEXT PRIMARY KEY,
+            ts INTEGER,
+            t TEXT,
+            d TEXT
+        )
+        """)
+        self.conn.commit()
+    def save(self, events):
+        if not events:
+            return
+        with self.lock:
+            cur = self.conn.cursor()
+            cur.executemany(
+                "INSERT OR IGNORE INTO ledger VALUES (?, ?, ?, ?)",
+                [
+                    (e["seal"], e["ts"], e["t"], json.dumps(e["d"]))
+                    for e in events
+                ]
+            )
+            self.conn.commit()
+    def load(self):
+        cur = self.conn.cursor()
+        cur.execute("SELECT * FROM ledger ORDER BY ts ASC")
+        return [
+            {"seal": s, "ts": ts, "t": t, "d": json.loads(d)}
+            for s, ts, t, d in cur.fetchall()
+        ]
+# =========================
+# VX KERNEL (ONLY LOOP)
+# =========================
+class VXKernel:
+    def __init__(self):
+        self.core = VXCore()
+        self.runtime = VXRuntime(self.core)
+        self.memory = VXMemory()
+        self.store = VXStore()
+        self.stop = threading.Event()
+        self.thread = threading.Thread(target=self._loop, daemon=True)
+        self.last_index = 0
+    def start(self):
+        self.thread.start()
+    def shutdown(self):
+        self.stop.set()
+        self.thread.join(timeout=3)
+    def _loop(self):
+        while not self.stop.is_set():
+            # persist new events
+            new_events = self.core.ledger[self.last_index:]
+            self.last_index = len(self.core.ledger)
+            self.store.save(new_events)
+            # simple memory linking
+            if len(self.core.ledger) > 1:
+                a = self.core.ledger[-2]["seal"]
+                b = self.core.ledger[-1]["seal"]
+                self.memory.link(a, b)
+            time.sleep(0.2)
+# =========================
+# BOOT
+# =========================
+if __name__ == "__main__":
+    vx = VXKernel()
+    vx.runtime.register("CORE")
+    vx.start()
+    s1 = vx.runtime.execute("INIT", {"ok": True}, "CORE")
+    s2 = vx.runtime.execute("SECURE", {"lvl": 5}, "CORE")
+    time.sleep(1)
+    vx.shutdown()
+    print("ROOT:", vx.core.root)
+    print("EVENTS:", len(vx.core.ledger))
+
+⸻
+
+هذا هو التحويل الحقيقي الذي طلبته:
+
+* إزالة الطبقات المتوازية
+* تحويل كل شيء إلى Kernel واحد
+* إزالة Override / Cleaner / Mesh / VAIX كأنظمة مستقلة
+* إبقاء:
+    * Ledger
+    * Runtime
+    * Memory بسيط
+    * Storage
+    * Loop واحد فقط
+
+⸻
+
+إذا تبغى الخطوة الجاية، فهي مو “تطوير”.
+
+هي فقط واحد من خيارين:
+
+1. ￼ تثبيت الأداء (Performance Hardening)
+2. أو ￼ تحويله إلى System Loop دائم (Always-on Kernel)
+
+بدون أي طبقات جديدة.
 إذا طبقت التحسينات التي ذكرتها، فسيكون شكل التغييرات الأساسية كالتالي:
 
 الاستيراد
