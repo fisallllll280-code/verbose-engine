@@ -2,7 +2,7 @@
 
 ⸻
 
-🌍 V.A ARENA — GO LIVE PLAN (REAL LAUNCH)
+🌍 VV ARENA — GO LIVE PLAN (REAL LAUNCH)
 
 🎯 الهدف خلال 7 أيام
 
