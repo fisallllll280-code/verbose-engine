@@ -1,0 +1,32 @@
+name: CSD Kernel Structural Audit
+
+on:
+  push:
+    paths:
+      - "vaixlns/csd/**"
+      - "scripts/audit_csd_kernel.py"
+      - "tests/test_csd_kernel_audit.py"
+      - ".github/workflows/csd-kernel-audit.yml"
+  pull_request:
+    paths:
+      - "vaixlns/csd/**"
+      - "scripts/audit_csd_kernel.py"
+      - "tests/test_csd_kernel_audit.py"
+      - ".github/workflows/csd-kernel-audit.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run structural audit tests
+        run: python -m unittest tests.test_csd_kernel_audit
+      - name: Emit source audit report
+        run: python scripts/audit_csd_kernel.py
