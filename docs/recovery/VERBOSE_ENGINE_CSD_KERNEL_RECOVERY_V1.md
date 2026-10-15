@@ -1,19 +1,19 @@
 # verbose-engine CSD Kernel Recovery Plan v1
 
 **Status:** PARTIAL / RECOVERY REQUIRED  
-**Target:** `vaixlns/csd/kernel.py` on the default branch  
+**Executable facade:** `vaixlns/csd/kernel.py` (reports `MISSING` and fails closed)  
 **Baseline observed during review:** `ffe607b29d36cff6f05494f7ec3fd11f2395ec4b`  
 **Working branch:** `recovery/csd-kernel-audit-v1`
 
 ## Why this recovery is necessary
 
-The current kernel file contains material that appears to mix Python with an LNS root document, Rust-shaped declarations, TOML-like sections, and Markdown. These are heuristic observations from source inspection, not a claim that every marker is active code or that the whole file fails to parse. The existing CI run inspected during review failed during checkout, before tests; it is not evidence of a Python source failure.
+The former `vaixlns/csd/kernel.py` contained 63,558 bytes of mixed-language and conversational material, and CI confirmed a Python syntax error before the tests could run. PR #8 preserves that exact source as `vaixlns/csd/kernel.mixed-source.txt` and replaces the Python path with a fail-closed facade that reports `MISSING`; it does not claim an executable CSD kernel exists. The same PR preserves the malformed imported path inventory and original Git tree references so checkout can proceed without a history rewrite.
 
 The repository history also includes a plan for twelve CSD laws, Merkle state hashing, XV/VV/VX coupling, attack simulation, replay verification, and a `verify-kernel` CLI. A plan in a commit message is not proof those deliverables exist or work.
 
 ## Safe first increment
 
-This branch adds a **read-only structural audit** and unit tests. It deliberately does not rewrite the legacy kernel or extract embedded sections automatically. The original source remains intact, preserving provenance and avoiding destructive guesses about section boundaries.
+This branch adds a **read-only structural audit** against `vaixlns/csd/kernel.mixed-source.txt` and unit tests. It does not execute the archive or extract embedded sections automatically. The original 63,558-byte source is preserved byte-for-byte; the .py path is only a fail-closed status facade until a separately reviewed implementation exists.
 
 Run:
 
