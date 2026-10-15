@@ -28,6 +28,11 @@ pub struct RootSpec {}
         report = MODULE.audit_text("def add(a, b):\n    return a + b\n")
         self.assertEqual(report["findings"], [])
 
+    def test_default_target_is_preserved_mixed_source_not_runtime_facade(self):
+        self.assertEqual(str(MODULE.DEFAULT_TARGET), "vaixlns/csd/kernel.mixed-source.txt")
+        report = MODULE.audit_text("VAIXLNS_ROOT.lns\n")
+        self.assertEqual(report["target_language"], "unclassified_mixed_source")
+
     def test_audit_is_heuristic_not_claim_of_invalidity(self):
         report = MODULE.audit_text("# heading\n")
         self.assertIn("not a parser", report["interpretation"])
