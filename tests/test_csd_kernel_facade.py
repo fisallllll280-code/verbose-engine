@@ -1,7 +1,12 @@
 """Fail-closed behavior and source preservation tests for the CSD kernel facade."""
 from __future__ import annotations
 
+import sys
 import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 
 from vaixlns.csd.kernel import CSDKernelUnavailable, require_runtime, status
 
@@ -13,10 +18,7 @@ class CSDKernelFacadeTests(unittest.TestCase):
         self.assertEqual(result["status"], "MISSING")
         self.assertFalse(result["runtime_executable"])
         self.assertTrue(result["legacy_source_present"])
-        self.assertEqual(
-            result["legacy_source_path"],
-            "vaixlns/csd/kernel.mixed-source.txt",
-        )
+        self.assertEqual(result["legacy_source_path"], "vaixlns/csd/kernel.mixed-source.txt")
 
     def test_runtime_request_fails_closed(self):
         with self.assertRaisesRegex(CSDKernelUnavailable, "not implemented"):
