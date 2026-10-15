@@ -1,8 +1,7 @@
-"""Read-only structural audit for the legacy CSD kernel source.
+"""Read-only structural audit for the preserved, unclassified CSD source artifact.
 
-This tool does not execute or rewrite the target file. It detects likely
-embedded multi-language/document sections so recovery can preserve source
-material before any extraction is approved.
+This tool does not execute or rewrite the target file. It identifies possible
+language/document markers for forensic review; it is not a language parser.
 """
 from __future__ import annotations
 
@@ -12,7 +11,7 @@ from pathlib import Path
 import re
 import sys
 
-DEFAULT_TARGET = Path("vaixlns/csd/kernel.py")
+DEFAULT_TARGET = Path("vaixlns/csd/kernel.mixed-source.txt")
 
 MARKERS = {
     "LNS document": re.compile(r"(?m)^\s*VAIXLNS_ROOT\.lns\s*$"),
@@ -40,7 +39,7 @@ def audit_text(text: str) -> dict:
     }
     return {
         "schema": "vaixlns.csd-kernel-structure-audit.v1",
-        "target_language": "python",
+        "target_language": "unclassified_mixed_source",
         "findings": findings,
         "heuristic_counts": suffixes,
         "interpretation": (
