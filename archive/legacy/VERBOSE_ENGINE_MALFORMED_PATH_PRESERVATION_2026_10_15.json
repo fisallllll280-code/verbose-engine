@@ -1,0 +1,90 @@
+{
+  "schema_version": "1.0.0",
+  "record_id": "VERBOSE_ENGINE_MALFORMED_PATH_PRESERVATION_2026_10_15",
+  "state": "ARCHIVE_POINTER_FOR_HISTORICAL_TREE",
+  "reason": "A malformed deeply nested directory-name chain makes GitHub Actions checkout fail with a filesystem path error. The original commit and subtree remain reachable in Git history. This manifest preserves the exact affected path inventory and content/tree hashes before the current-tree entry is removed.",
+  "source_repository": "fisallllll280-code/verbose-engine",
+  "source_commit": "ffe607b29d36cff6f05494f7ec3fd11f2395ec4b",
+  "source_root_tree_sha": "cd8a02ef6b9a5a7eaa310183c463a67177b17b48",
+  "offending_root_path": "تمام، هذا النشر الفعلي الصحيح (GitHub + تشغيل + إطلاق أولي) لمشروع V.A Arena بدون كلام زائد.  ⸻  🚀 1) تجهيز الريبو للنشر  📁 اسم المشروع  va-ai-arena  ⸻  🧱 هيكل نهائي لازم يكون عندك  va-ai-arena",
+  "offending_subtree_sha": "b0952d5c6f825625116c98cf58486b61121858e6",
+  "affected_tree_entries": [
+    {
+      "path": "تمام، هذا النشر الفعلي الصحيح (GitHub + تشغيل + إطلاق أولي) لمشروع V.A Arena بدون كلام زائد.  ⸻  🚀 1) تجهيز الريبو للنشر  📁 اسم المشروع  va-ai-arena  ⸻  🧱 هيكل نهائي لازم يكون عندك  va-ai-arena",
+      "type": "tree",
+      "mode": "040000",
+      "sha": "b0952d5c6f825625116c98cf58486b61121858e6",
+      "size": null
+    },
+    {
+      "path": "تمام، هذا النشر الفعلي الصحيح (GitHub + تشغيل + إطلاق أولي) لمشروع V.A Arena بدون كلام زائد.  ⸻  🚀 1) تجهيز الريبو للنشر  📁 اسم المشروع  va-ai-arena  ⸻  🧱 هيكل نهائي لازم يكون عندك  va-ai-arena/ ├── backend",
+      "type": "tree",
+      "mode": "040000",
+      "sha": "2567cd89e5de853f869f8723f3b7d541f64c004d",
+      "size": null
+    },
+    {
+      "path": "تمام، هذا النشر الفعلي الصحيح (GitHub + تشغيل + إطلاق أولي) لمشروع V.A Arena بدون كلام زائد.  ⸻  🚀 1) تجهيز الريبو للنشر  📁 اسم المشروع  va-ai-arena  ⸻  🧱 هيكل نهائي لازم يكون عندك  va-ai-arena/ ├── backend/ ├── frontend",
+      "type": "tree",
+      "mode": "040000",
+      "sha": "a129d053719cb4952f6586a5908665ebd481d4b5",
+      "size": null
+    },
+    {
+      "path": "تمام، هذا النشر الفعلي الصحيح (GitHub + تشغيل + إطلاق أولي) لمشروع V.A Arena بدون كلام زائد.  ⸻  🚀 1) تجهيز الريبو للنشر  📁 اسم المشروع  va-ai-arena  ⸻  🧱 هيكل نهائي لازم يكون عندك  va-ai-arena/ ├── backend/ ├── frontend/ ├── infra",
+      "type": "tree",
+      "mode": "040000",
+      "sha": "40a7e22fa4ea8fd530aab2f35749ac73144547cf",
+      "size": null
+    },
+    {
+      "path": "تمام، هذا النشر الفعلي الصحيح (GitHub + تشغيل + إطلاق أولي) لمشروع V.A Arena بدون كلام زائد.  ⸻  🚀 1) تجهيز الريبو للنشر  📁 اسم المشروع  va-ai-arena  ⸻  🧱 هيكل نهائي لازم يكون عندك  va-ai-arena/ ├── backend/ ├── frontend/ ├── infra/ ├── README.md ├── .gitignore ├── docker-compose.yml  ⸻  ⚙️ 2) أوامر النشر على GitHub  افتح terminal داخل مجلد المشروع:  git init git add . git commit -m \"V.A Arena initial release\" git branch -M main git remote add origin https:",
+      "type": "tree",
+      "mode": "040000",
+      "sha": "310185981ad376cc4dd290ab6599138a00d75af0",
+      "size": null
+    },
+    {
+      "path": "تمام، هذا النشر الفعلي الصحيح (GitHub + تشغيل + إطلاق أولي) لمشروع V.A Arena بدون كلام زائد.  ⸻  🚀 1) تجهيز الريبو للنشر  📁 اسم المشروع  va-ai-arena  ⸻  🧱 هيكل نهائي لازم يكون عندك  va-ai-arena/ ├── backend/ ├── frontend/ ├── infra/ ├── README.md ├── .gitignore ├── docker-compose.yml  ⸻  ⚙️ 2) أوامر النشر على GitHub  افتح terminal داخل مجلد المشروع:  git init git add . git commit -m \"V.A Arena initial release\" git branch -M main git remote add origin https:/github.com",
+      "type": "tree",
+      "mode": "040000",
+      "sha": "c544b3590999f01a0c0f44d270e8a0974833c10d",
+      "size": null
+    },
+    {
+      "path": "تمام، هذا النشر الفعلي الصحيح (GitHub + تشغيل + إطلاق أولي) لمشروع V.A Arena بدون كلام زائد.  ⸻  🚀 1) تجهيز الريبو للنشر  📁 اسم المشروع  va-ai-arena  ⸻  🧱 هيكل نهائي لازم يكون عندك  va-ai-arena/ ├── backend/ ├── frontend/ ├── infra/ ├── README.md ├── .gitignore ├── docker-compose.yml  ⸻  ⚙️ 2) أوامر النشر على GitHub  افتح terminal داخل مجلد المشروع:  git init git add . git commit -m \"V.A Arena initial release\" git branch -M main git remote add origin https:/github.com/YOUR_USERNAME",
+      "type": "tree",
+      "mode": "040000",
+      "sha": "4fe7cb6fe11f4b022384cbae1ebddf603ff8f179",
+      "size": null
+    },
+    {
+      "path": "تمام، هذا النشر الفعلي الصحيح (GitHub + تشغيل + إطلاق أولي) لمشروع V.A Arena بدون كلام زائد.  ⸻  🚀 1) تجهيز الريبو للنشر  📁 اسم المشروع  va-ai-arena  ⸻  🧱 هيكل نهائي لازم يكون عندك  va-ai-arena/ ├── backend/ ├── frontend/ ├── infra/ ├── README.md ├── .gitignore ├── docker-compose.yml  ⸻  ⚙️ 2) أوامر النشر على GitHub  افتح terminal داخل مجلد المشروع:  git init git add . git commit -m \"V.A Arena initial release\" git branch -M main git remote add origin https:/github.com/YOUR_USERNAME/va-ai-arena.git git push -u origin main  ⸻  🐳 3) تشغيل المشروع محليًا (قبل النشر)  docker-compose up --build  ⸻  🌐 4) تشغيل Backend بدون Docker (اختياري)  cd backend pip install -r requirements.txt uvicorn app.main:app --reload  ⸻  🌐 5) تشغيل Frontend  cd frontend npm install npm run dev  ⸻  📘 6) README جاهز للنشر (انسخه كما هو)  # V.A AI Arena 🤖⚔️ AI competition platform where V.A (Challenger AI) competes against judges in structured challenges. ## 🔥 Features - V.A Challenger AI system - 3 Judges evaluation system - Scori",
+      "type": "blob",
+      "mode": "100644",
+      "sha": "575bcac0a9fe56e04cef8aed09fe378f7e40db65",
+      "size": 3
+    },
+    {
+      "path": "تمام، هذا النشر الفعلي الصحيح (GitHub + تشغيل + إطلاق أولي) لمشروع V.A Arena بدون كلام زائد.  ⸻  🚀 1) تجهيز الريبو للنشر  📁 اسم المشروع  va-ai-arena  ⸻  🧱 هيكل نهائي لازم يكون عندك  va-ai-arena/مو جاهز فعليًا كـ “إطلاق عالمي” من ناحية التشغيل الحقيقي، لكن أقدر أعطيك خطة إطلاق فعلية قابلة للتنفيذ اليوم + أول نسخة تشغيل (Go-Live Checklist) بحيث تتحول من كود إلى منتج شغال.  ⸻  🌍 V.A ARENA — GO LIVE PLAN (REAL LAUNCH)  🎯 الهدف خلال 7 أيام  * نشر المنصة على الإنترنت * أول مستخدمين حقيقيين * أول مباريات AI شغالة * تتبع استخدام + نمو  ⸻  🚀 1) النشر الفعلي (Deployment)  🟢 Frontend (Vercel)  1. ارفع frontend على GitHub 2. افتح vercel.com 3. Import project 4. اختر frontend folder 5. Deploy  ⸻  🔵 Backend (Render ",
+      "type": "tree",
+      "mode": "040000",
+      "sha": "71a42fd62c63961cce4f75c7b1df55b756817eb6",
+      "size": null
+    },
+    {
+      "path": "تمام، هذا النشر الفعلي الصحيح (GitHub + تشغيل + إطلاق أولي) لمشروع V.A Arena بدون كلام زائد.  ⸻  🚀 1) تجهيز الريبو للنشر  📁 اسم المشروع  va-ai-arena  ⸻  🧱 هيكل نهائي لازم يكون عندك  va-ai-arena/مو جاهز فعليًا كـ “إطلاق عالمي” من ناحية التشغيل الحقيقي، لكن أقدر أعطيك خطة إطلاق فعلية قابلة للتنفيذ اليوم + أول نسخة تشغيل (Go-Live Checklist) بحيث تتحول من كود إلى منتج شغال.  ⸻  🌍 V.A ARENA — GO LIVE PLAN (REAL LAUNCH)  🎯 الهدف خلال 7 أيام  * نشر المنصة على الإنترنت * أول مستخدمين حقيقيين * أول مباريات AI شغالة * تتبع استخدام + نمو  ⸻  🚀 1) النشر الفعلي (Deployment)  🟢 Frontend (Vercel)  1. ارفع frontend على GitHub 2. افتح vercel.com 3. Import project 4. اختر frontend folder 5. Deploy  ⸻  🔵 Backend (Render / Railway)  Render (أسهل)  1. create new web service 2. connect GitHub repo 3. root = backend 4. start command:    uvicorn main:app --host 0.0.0.0 --port 8000 5. deploy  ⸻  🟣 Database (PostgreSQL)  * Render PostgreSQL أو Supabase * اربطه بالـ backend  ⸻  🔴 Redis (Realtime)  * Upstash Redis (سحابي) * ان",
+      "type": "blob",
+      "mode": "100644",
+      "sha": "575bcac0a9fe56e04cef8aed09fe378f7e40db65",
+      "size": 3
+    }
+  ],
+  "preservation_policy": {
+    "preserve_git_history": true,
+    "rewrite_history": false,
+    "preserve_raw_path_names": true,
+    "preserve_tree_and_blob_shas": true,
+    "no_claim_that_archived_import_is_valid_runtime": true
+  }
+}
