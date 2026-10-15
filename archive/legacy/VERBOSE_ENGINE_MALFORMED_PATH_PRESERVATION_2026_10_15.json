@@ -86,5 +86,16 @@
     "preserve_raw_path_names": true,
     "preserve_tree_and_blob_shas": true,
     "no_claim_that_archived_import_is_valid_runtime": true
-  }
+  },
+  "preserved_artifacts": [
+    {
+      "original_path": "vaixlns/csd/kernel.py",
+      "original_blob_sha": "1d0f54a076be32cb7d9258d3aed130b3dce19ccd",
+      "archived_path": "vaixlns/csd/kernel.mixed-source.txt",
+      "archived_blob_sha": "1d0f54a076be32cb7d9258d3aed130b3dce19ccd",
+      "original_bytes": 63558,
+      "preservation": "exact UTF-8 text copy; no semantic edits",
+      "runtime_disposition": "non-executable historical source; current Python path now fails closed"
+    }
+  ]
 }
