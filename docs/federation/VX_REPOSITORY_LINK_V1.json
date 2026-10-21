@@ -1,0 +1,48 @@
+{
+  "schema_version": "1.0.0",
+  "record_type": "repository_federation_pointer",
+  "repository": "fisallllll280-code/verbose-engine",
+  "role": "control_center_candidate",
+  "canonical_authority": "fisallllll280-code/VAIXLNS",
+  "execution_broker": "fisallllll280-code/VX-runtime",
+  "canonical_contract": "registry/federation/federation_contract_edges.v1.json",
+  "branch": "feat/vx-federation-links-20261021",
+  "federation_state": "PROPOSED_NOT_CONNECTED",
+  "runtime_connected": false,
+  "identity_equivalence_proven": false,
+  "allowed_operations": [
+    "discover_metadata",
+    "submit_review_proposal"
+  ],
+  "blocked_operations": [
+    "direct_cross_repository_import",
+    "canonical_write",
+    "deploy",
+    "merge",
+    "invoke_unapproved_adapter"
+  ],
+  "rules": [
+    "No Proof = No Commit",
+    "FAIL_CLOSED",
+    "NO DELETE / NO LOSS / EXTEND ONLY",
+    "No edits to project.genome or Ω.000",
+    "No external provider credentials in repository"
+  ],
+  "peer_repositories": [
+    "fisallllll280-code/VAIXLNS",
+    "fisallllll280-code/VAIXLNS-unified",
+    "fisallllll280-code/VX-runtime",
+    "fisallllll280-code/NEXENT",
+    "fisallllll280-code/NAXLNS",
+    "fisallllll280-code/quickstart-resources"
+  ],
+  "evidence_required_for_activation": [
+    "identity_attestation",
+    "approved_adapter_contract",
+    "authority_grant_if_effectful",
+    "isolated_integration_tests",
+    "replay_receipt",
+    "current_runtime_observation"
+  ],
+  "notes": "Repository membership is not proof of four-system identity; NAXLNS != VLNS and NEXENT != NEXNET unless separately evidenced. This pointer never activates a connection."
+}
